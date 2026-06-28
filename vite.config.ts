@@ -4,7 +4,7 @@ import path from 'path';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: '/SAPARIAU/',
+  base: '/',
 
   plugins: [react(), tailwindcss()],
 
