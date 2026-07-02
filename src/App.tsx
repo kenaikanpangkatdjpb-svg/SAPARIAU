@@ -1,7 +1,24 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getStoredData, saveEmployees, saveAttendance, saveLeaves, saveLogbooks, saveSettings } from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
-
+import { 
+  checkSupabaseConnection,
+  getEmployeesFromSupabase,
+  getAttendanceFromSupabase,
+  getLeavesFromSupabase,
+  getLogbooksFromSupabase,
+  getSettingsFromSupabase,
+  getOvertimeFromSupabase,
+  upsertEmployeeToSupabase,
+  upsertAttendanceToSupabase,
+  upsertLeaveToSupabase,
+  upsertLogbookToSupabase,
+  upsertSettingsToSupabase,
+  upsertOvertimeToSupabase,
+  deleteEmployeeFromSupabase,
+  deleteLeaveFromSupabase,
+  SQL_CREATION_SCRIPT
+} from './utils/supabase';
 // Components
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -24,7 +41,7 @@ import KopLogoSettingsView from './components/KopLogoSettingsView';
 import RekomendasiKIView from './components/RekomendasiKIView';
 
 // Extra Evaluation Views to match the requested image perfectly
-import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle, Users, PlusSquare } from 'lucide-react';
 
 const MONTHS_LIST = [
   { value: '01', label: 'Januari' },
@@ -59,19 +76,274 @@ export default function App() {
   const [selectedLemburYear, setSelectedLemburYear] = useState('2026');
   const [resetKeyword, setResetKeyword] = useState('');
   const [isResetSuccess, setIsResetSuccess] = useState(false);
+  const [searchQuotaQuery, setSearchQuotaQuery] = useState('');
+  const [employeeQuotas, setEmployeeQuotas] = useState<{ [empId: string]: number }>({});
+  const [quotaSuccessMap, setQuotaSuccessMap] = useState<{ [empId: string]: boolean }>({});
 
-  // Initialize data on load
+  const [supabaseConnected, setSupabaseConnected] = useState(false);
+  const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
+
+  // Initialize data on load and keep synchronized in realtime with Supabase Cloud
   useEffect(() => {
-    const data = getStoredData();
-    setEmployees(data.employees);
-    setAttendance(data.attendance);
-    setLeaves(data.leaves);
-    setLogbooks(data.logbooks);
-    setSettings(data.settings);
+    const loadAllData = async () => {
+      // 1. Immediately load local storage to ensure instant offline-first rendering
+      const data = getStoredData();
+      setEmployees(data.employees);
+      setAttendance(data.attendance);
+      setLeaves(data.leaves);
+      setLogbooks(data.logbooks);
+      setSettings(data.settings);
+
+      // 2. Validate connection to Supabase and perform data synchronization
+      const isConnected = await checkSupabaseConnection();
+      setSupabaseConnected(isConnected);
+
+      if (isConnected) {
+        setIsSyncingSupabase(true);
+        try {
+          // Sync Employees
+          const dbEmps = await getEmployeesFromSupabase();
+          if (dbEmps && dbEmps.length > 0) {
+            setEmployees(dbEmps);
+            localStorage.setItem('ppnpn_employees', JSON.stringify(dbEmps));
+          } else if (dbEmps && dbEmps.length === 0 && data.employees.length > 0) {
+            for (const emp of data.employees) {
+              await upsertEmployeeToSupabase(emp);
+            }
+          }
+
+          // Sync Regular Attendance
+          const dbAtt = await getAttendanceFromSupabase();
+          if (dbAtt && dbAtt.length > 0) {
+            setAttendance(dbAtt);
+            localStorage.setItem('ppnpn_attendance', JSON.stringify(dbAtt));
+          } else if (dbAtt && dbAtt.length === 0 && data.attendance.length > 0) {
+            for (const att of data.attendance) {
+              await upsertAttendanceToSupabase(att);
+            }
+          }
+
+          // Sync Leaves
+          const dbLeaves = await getLeavesFromSupabase();
+          if (dbLeaves && dbLeaves.length > 0) {
+            setLeaves(dbLeaves);
+            localStorage.setItem('ppnpn_leaves', JSON.stringify(dbLeaves));
+          } else if (dbLeaves && dbLeaves.length === 0 && data.leaves.length > 0) {
+            for (const leave of data.leaves) {
+              await upsertLeaveToSupabase(leave);
+            }
+          }
+
+          // Sync Logbooks
+          const dbLogs = await getLogbooksFromSupabase();
+          if (dbLogs && dbLogs.length > 0) {
+            setLogbooks(dbLogs);
+            localStorage.setItem('ppnpn_logbooks', JSON.stringify(dbLogs));
+          } else if (dbLogs && dbLogs.length === 0 && data.logbooks.length > 0) {
+            for (const log of data.logbooks) {
+              await upsertLogbookToSupabase(log);
+            }
+          }
+
+          // Sync Office Settings
+          const dbSettings = await getSettingsFromSupabase();
+          if (dbSettings) {
+            setSettings(dbSettings);
+            localStorage.setItem('ppnpn_settings', JSON.stringify(dbSettings));
+          } else {
+            await upsertSettingsToSupabase(data.settings);
+          }
+
+          // Sync Overtime Attendance Records
+          const dbOvertime = await getOvertimeFromSupabase();
+          if (dbOvertime && dbOvertime.length > 0) {
+            localStorage.setItem('overtime_attendance_records', JSON.stringify(dbOvertime));
+          } else {
+            const localOvertime = localStorage.getItem('overtime_attendance_records');
+            if (localOvertime) {
+              try {
+                const parsed = JSON.parse(localOvertime);
+                for (const rec of parsed) {
+                  await upsertOvertimeToSupabase(rec);
+                }
+              } catch (e) {
+                console.error("Failed to parse/seed local overtime records:", e);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Error during startup Supabase synchronization:", err);
+        } finally {
+          setIsSyncingSupabase(false);
+          window.dispatchEvent(new Event('storage'));
+        }
+      }
+    };
+
+    loadAllData();
+
+    // Setup periodic polling sync every 12 seconds
+    const interval = setInterval(async () => {
+      const isConnected = await checkSupabaseConnection();
+      setSupabaseConnected(isConnected);
+      if (isConnected) {
+        try {
+          const dbEmps = await getEmployeesFromSupabase();
+          if (dbEmps && dbEmps.length > 0) {
+            setEmployees(dbEmps);
+            localStorage.setItem('ppnpn_employees', JSON.stringify(dbEmps));
+          }
+
+          const dbAtt = await getAttendanceFromSupabase();
+          if (dbAtt && dbAtt.length > 0) {
+            setAttendance(dbAtt);
+            localStorage.setItem('ppnpn_attendance', JSON.stringify(dbAtt));
+          }
+
+          const dbLeaves = await getLeavesFromSupabase();
+          if (dbLeaves && dbLeaves.length > 0) {
+            setLeaves(dbLeaves);
+            localStorage.setItem('ppnpn_leaves', JSON.stringify(dbLeaves));
+          }
+
+          const dbLogs = await getLogbooksFromSupabase();
+          if (dbLogs && dbLogs.length > 0) {
+            setLogbooks(dbLogs);
+            localStorage.setItem('ppnpn_logbooks', JSON.stringify(dbLogs));
+          }
+
+          const dbOvertime = await getOvertimeFromSupabase();
+          if (dbOvertime && dbOvertime.length > 0) {
+            localStorage.setItem('overtime_attendance_records', JSON.stringify(dbOvertime));
+          }
+
+          window.dispatchEvent(new Event('storage'));
+        } catch (err) {
+          console.error("Error in background Supabase polling sync:", err);
+        }
+      }
+    }, 12000);
+
+    return () => {
+      clearInterval(interval);
+    };
   }, []);
 
+  const handleSeedSupabase = async () => {
+    const isConnected = await checkSupabaseConnection();
+    if (!isConnected) {
+      alert("Gagal terhubung ke Supabase! Pastikan Anda sudah membuat tabel database menggunakan SQL Script di SQL Editor Supabase.");
+      return;
+    }
+
+    setIsSyncingSupabase(true);
+    const errors: string[] = [];
+    let successCount = 0;
+    let totalCount = 0;
+
+    try {
+      // 1. Settings
+      totalCount++;
+      try {
+        await upsertSettingsToSupabase(settings, true);
+        successCount++;
+      } catch (err: any) {
+        errors.push(`Settings: ${err.message || JSON.stringify(err)}`);
+      }
+
+      // 2. Employees
+      for (const emp of employees) {
+        totalCount++;
+        try {
+          await upsertEmployeeToSupabase(emp, true);
+          successCount++;
+        } catch (err: any) {
+          errors.push(`Karyawan (${emp.name}): ${err.message || JSON.stringify(err)}`);
+        }
+      }
+
+      // 3. Attendance
+      for (const att of attendance) {
+        totalCount++;
+        try {
+          await upsertAttendanceToSupabase(att, true);
+          successCount++;
+        } catch (err: any) {
+          errors.push(`Presensi (${att.employeeName} - ${att.date}): ${err.message || JSON.stringify(err)}`);
+        }
+      }
+
+      // 4. Leaves
+      for (const leave of leaves) {
+        totalCount++;
+        try {
+          await upsertLeaveToSupabase(leave, true);
+          successCount++;
+        } catch (err: any) {
+          errors.push(`Cuti (${leave.employeeName} - ${leave.startDate}): ${err.message || JSON.stringify(err)}`);
+        }
+      }
+
+      // 5. Logbooks
+      for (const log of logbooks) {
+        totalCount++;
+        try {
+          await upsertLogbookToSupabase(log, true);
+          successCount++;
+        } catch (err: any) {
+          errors.push(`Logbook (${log.employeeName} - ${log.date}): ${err.message || JSON.stringify(err)}`);
+        }
+      }
+
+      // 6. Overtime records
+      const localOvertime = localStorage.getItem('overtime_attendance_records');
+      if (localOvertime) {
+        try {
+          const parsed = JSON.parse(localOvertime);
+          for (const rec of parsed) {
+            totalCount++;
+            try {
+              await upsertOvertimeToSupabase(rec, true);
+              successCount++;
+            } catch (err: any) {
+              errors.push(`Lembur (${rec.employeeName} - ${rec.date}): ${err.message || JSON.stringify(err)}`);
+            }
+          }
+        } catch (e: any) {
+          console.error("Failed to parse local overtime records:", e);
+        }
+      }
+
+      if (errors.length === 0) {
+        alert(`Inisialisasi & Migrasi data berhasil dilakukan!\n\nSeluruh ${successCount} data berhasil dipindahkan ke Supabase Cloud.`);
+      } else {
+        const errorSummary = errors.slice(0, 5).join('\n');
+        const remainingCount = errors.length > 5 ? `\n...dan ${errors.length - 5} kesalahan lainnya` : '';
+        alert(
+          `Inisialisasi & Migrasi selesai sebagian.\n\n` +
+          `Berhasil memindahkan: ${successCount} dari ${totalCount} data.\n` +
+          `Gagal memindahkan: ${errors.length} data.\n\n` +
+          `Daftar kesalahan:\n${errorSummary}${remainingCount}\n\n` +
+          `Saran:\n1. Pastikan Anda sudah menjalankan seluruh SQL Schema Script di SQL Editor Supabase.\n` +
+          `2. Periksa apakah Row Level Security (RLS) di Supabase sudah dimatikan untuk semua tabel.`
+        );
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`Terjadi kesalahan sistem saat memigrasikan data ke Supabase: ${err.message || err}`);
+    } finally {
+      setIsSyncingSupabase(false);
+    }
+  };
+
   // Sync today's attendance for the logged-in user
-  const todayDateStr = "2026-06-24"; // System static mock date
+  const todayDateStr = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
 
   const todayAttendance = useMemo(() => {
     if (!currentUser) return null;
@@ -93,19 +365,103 @@ export default function App() {
     const updated = [...employees, newEmp];
     setEmployees(updated);
     saveEmployees(updated);
+    upsertEmployeeToSupabase(newEmp);
   };
 
   const handleDeleteEmployee = (id: string) => {
     const updated = employees.filter(e => e.id !== id);
     setEmployees(updated);
     saveEmployees(updated);
+    deleteEmployeeFromSupabase(id);
   };
 
-  const handleEditEmployee = (updatedEmp: Employee) => {
-    const updated = employees.map(e => e.id === updatedEmp.id ? updatedEmp : e);
+  const handleEditEmployee = (updatedEmp: Employee, oldId?: string) => {
+    const targetId = oldId || updatedEmp.id;
+    const updated = employees.map(e => e.id === targetId ? updatedEmp : e);
     setEmployees(updated);
     saveEmployees(updated);
-    if (currentUser && currentUser.id === updatedEmp.id) {
+    upsertEmployeeToSupabase(updatedEmp);
+    if (oldId && oldId.toLowerCase() !== updatedEmp.id.toLowerCase()) {
+      deleteEmployeeFromSupabase(oldId);
+      // 1. Update Attendance
+      const updatedAttendance = attendance.map(att => {
+        if (att.employeeId === oldId) {
+          return {
+            ...att,
+            employeeId: updatedEmp.id,
+            employeeName: updatedEmp.name,
+            id: att.id === `att_${oldId}_${att.date}` ? `att_${updatedEmp.id}_${att.date}` : att.id
+          };
+        }
+        return att;
+      });
+      setAttendance(updatedAttendance);
+      saveAttendance(updatedAttendance);
+
+      // 2. Update Leaves
+      const updatedLeaves = leaves.map(leave => {
+        if (leave.employeeId === oldId) {
+          return {
+            ...leave,
+            employeeId: updatedEmp.id,
+            employeeName: updatedEmp.name
+          };
+        }
+        return leave;
+      });
+      setLeaves(updatedLeaves);
+      saveLeaves(updatedLeaves);
+
+      // 3. Update Logbooks
+      const updatedLogbooks = logbooks.map(log => {
+        if (log.employeeId === oldId) {
+          return {
+            ...log,
+            employeeId: updatedEmp.id,
+            employeeName: updatedEmp.name
+          };
+        }
+        return log;
+      });
+      setLogbooks(updatedLogbooks);
+      saveLogbooks(updatedLogbooks);
+
+      // 4. Overtime requests key renaming in localStorage
+      const oldRequestsKey = `overtime_requests_${oldId}`;
+      const newRequestsKey = `overtime_requests_${updatedEmp.id}`;
+      const oldRequestsData = localStorage.getItem(oldRequestsKey);
+      if (oldRequestsData) {
+        localStorage.setItem(newRequestsKey, oldRequestsData);
+        localStorage.removeItem(oldRequestsKey);
+      }
+
+      // 5. Overtime Attendance Records in localStorage
+      const storedOvertime = localStorage.getItem('overtime_attendance_records');
+      if (storedOvertime) {
+        try {
+          const records = JSON.parse(storedOvertime);
+          const updatedRecords = records.map((rec: any) => {
+            if (rec.employeeId === oldId) {
+              return {
+                ...rec,
+                employeeId: updatedEmp.id,
+                employeeName: updatedEmp.name,
+                id: rec.id === `ov_att_${oldId}_${rec.date}` ? `ov_att_${updatedEmp.id}_${rec.date}` : rec.id
+              };
+            }
+            return rec;
+          });
+          localStorage.setItem('overtime_attendance_records', JSON.stringify(updatedRecords));
+        } catch (e) {
+          console.error("Error updating overtime records", e);
+        }
+      }
+
+      // Dispatch storage event to keep views updated
+      window.dispatchEvent(new Event('storage'));
+    }
+
+    if (currentUser && (currentUser.id === targetId || currentUser.id === updatedEmp.id)) {
       setCurrentUser(updatedEmp);
     }
   };
@@ -115,6 +471,7 @@ export default function App() {
     const updated = [...leaves, newLeave];
     setLeaves(updated);
     saveLeaves(updated);
+    upsertLeaveToSupabase(newLeave);
   };
 
   const handleApproveLeave = (id: string, approve: boolean) => {
@@ -124,15 +481,16 @@ export default function App() {
         
         // Deduct employee cuti quota if approved
         if (approve && leave.type === 'Cuti') {
-          const start = new Date(leave.startDate);
-          const end = new Date(leave.endDate);
-          const diffTime = Math.abs(end.getTime() - start.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+          const diffDays = leave.workDays || 1;
 
           setEmployees(prevEmps => {
             const updatedEmps = prevEmps.map(emp => {
               if (emp.id === leave.employeeId) {
-                return { ...emp, cutiQuota: Math.max(0, emp.cutiQuota - diffDays) };
+                const newQuota = Math.max(0, emp.cutiQuota - diffDays);
+                if (currentUser && currentUser.id === emp.id) {
+                  setCurrentUser(prevUser => prevUser ? { ...prevUser, cutiQuota: newQuota } : null);
+                }
+                return { ...emp, cutiQuota: newQuota };
               }
               return emp;
             });
@@ -141,13 +499,59 @@ export default function App() {
           });
         }
 
-        return { ...leave, status, approvedBy: currentUser?.name };
+        return { 
+          ...leave, 
+          status, 
+          approvedBy: currentUser?.name || 'Ahmad Nauval', 
+          approvedDate: new Date().toISOString().split('T')[0] 
+        };
       }
       return leave;
     });
 
     setLeaves(updated);
     saveLeaves(updated);
+    const approvedItem = updated.find(l => l.id === id);
+    if (approvedItem) {
+      upsertLeaveToSupabase(approvedItem);
+    }
+  };
+
+  const handleEditLeave = (updatedLeave: LeaveRequest) => {
+    const originalLeave = leaves.find(l => l.id === updatedLeave.id);
+    let finalLeave = { ...updatedLeave };
+
+    if (originalLeave) {
+      // Revert status to Pending for any edits
+      finalLeave.status = 'Pending';
+      delete finalLeave.approvedBy;
+      delete finalLeave.approvedDate;
+
+      // Refund quota if it was previously Approved
+      if (originalLeave.status === 'Approved' && originalLeave.type === 'Cuti') {
+        const diffDaysOrig = originalLeave.workDays || 1;
+
+        setEmployees(prevEmps => {
+          const updatedEmps = prevEmps.map(emp => {
+            if (emp.id === originalLeave.employeeId) {
+              const newQuota = emp.cutiQuota + diffDaysOrig;
+              if (currentUser && currentUser.id === emp.id) {
+                setCurrentUser(prevUser => prevUser ? { ...prevUser, cutiQuota: newQuota } : null);
+              }
+              return { ...emp, cutiQuota: newQuota };
+            }
+            return emp;
+          });
+          saveEmployees(updatedEmps);
+          return updatedEmps;
+        });
+      }
+    }
+
+    const updated = leaves.map(leave => leave.id === finalLeave.id ? finalLeave : leave);
+    setLeaves(updated);
+    saveLeaves(updated);
+    upsertLeaveToSupabase(finalLeave);
   };
 
   // Logbook actions
@@ -169,6 +573,7 @@ export default function App() {
     const updated = [newLog, ...logbooks];
     setLogbooks(updated);
     saveLogbooks(updated);
+    upsertLogbookToSupabase(newLog);
   };
 
   const handleApproveLogbook = (id: string, approve: boolean) => {
@@ -181,6 +586,10 @@ export default function App() {
     });
     setLogbooks(updated);
     saveLogbooks(updated);
+    const approvedLog = updated.find(l => l.id === id);
+    if (approvedLog) {
+      upsertLogbookToSupabase(approvedLog);
+    }
   };
 
   // Attendance actions
@@ -188,8 +597,9 @@ export default function App() {
     if (!currentUser) return;
 
     let updatedAttendance = [...attendance];
+    const isMasuk = attendanceData.checkIn !== undefined && attendanceData.checkIn !== null;
     
-    if (absenModalType === 'masuk') {
+    if (isMasuk) {
       const newRecord: Attendance = {
         id: `att_${currentUser.id}_${attendanceData.date}`,
         employeeId: currentUser.id,
@@ -209,6 +619,7 @@ export default function App() {
         shift: attendanceData.shift
       };
       updatedAttendance.push(newRecord);
+      upsertAttendanceToSupabase(newRecord);
 
       // If logbook note is added inside Check-In modal, push to Logbook lists
       if (attendanceData.logbookNotes) {
@@ -216,31 +627,38 @@ export default function App() {
       }
     } else {
       // update checkOut data
+      let finalRec: Attendance | null = null;
       updatedAttendance = updatedAttendance.map(att => {
         if (att.employeeId === currentUser.id && att.date === attendanceData.date) {
-          return {
+          const rec = {
             ...att,
             checkOut: attendanceData.checkOut!,
             checkOutPhoto: attendanceData.checkOutPhoto!,
             checkOutLocation: attendanceData.checkOutLocation!,
             checkOutAddress: attendanceData.checkOutAddress!,
-            checkOutStatus: 'Tepat Waktu'
+            checkOutStatus: 'Tepat Waktu' as const
           };
+          finalRec = rec;
+          return rec;
         }
         return att;
       });
+      if (finalRec) {
+        upsertAttendanceToSupabase(finalRec);
+      }
     }
 
     setAttendance(updatedAttendance);
     saveAttendance(updatedAttendance);
     setAbsenModalType(null);
-    alert(`Berhasil melakukan Absen ${absenModalType === 'masuk' ? 'Masuk' : 'Pulang'}!`);
+    alert(`Berhasil melakukan Absen ${isMasuk ? 'Masuk' : 'Pulang'}!`);
   };
 
   // Save Settings
   const handleSaveSettings = (updatedSettings: OfficeSettings) => {
     setSettings(updatedSettings);
     saveSettings(updatedSettings);
+    upsertSettingsToSupabase(updatedSettings);
   };
 
   // Change Password
@@ -328,6 +746,7 @@ export default function App() {
             leaves={currentUser!.role === 'admin' ? leaves.filter(l => l.type === 'Cuti') : leaves}
             onAddLeave={handleAddLeave}
             onApproveLeave={handleApproveLeave}
+            onEditLeave={handleEditLeave}
             viewType="cuti"
           />
         );
@@ -371,6 +790,7 @@ export default function App() {
             leaves={currentUser!.role === 'admin' ? leaves.filter(l => l.type !== 'Cuti') : leaves}
             onAddLeave={handleAddLeave}
             onApproveLeave={handleApproveLeave}
+            onEditLeave={handleEditLeave}
             viewType="izin"
           />
         );
@@ -434,6 +854,9 @@ export default function App() {
             settings={settings}
             onSaveSettings={handleSaveSettings}
             onChangePassword={handleChangePassword}
+            supabaseConnected={supabaseConnected}
+            onSeedSupabase={handleSeedSupabase}
+            isSyncingSupabase={isSyncingSupabase}
           />
         );
       case 'ganti-password':
@@ -443,27 +866,149 @@ export default function App() {
             settings={settings}
             onSaveSettings={handleSaveSettings}
             onChangePassword={handleChangePassword}
+            supabaseConnected={supabaseConnected}
+            onSeedSupabase={handleSeedSupabase}
+            isSyncingSupabase={isSyncingSupabase}
           />
         );
       case 'generate-cuti':
         return (
-          <div className="bg-[#161618] p-8 rounded-none border border-white/10 max-w-md mx-auto text-center space-y-5">
-            <ShieldCheck className="w-12 h-12 text-[#D4AF37] mx-auto" />
-            <h3 className="text-base font-serif italic text-[#F4F4F5]">Generate Kuota Cuti Tahunan PPNPN</h3>
-            <p className="text-xs text-[#A1A1AA] leading-relaxed">
-              Menghasilkan ulang/menambahkan kuota cuti tahunan default secara masif bagi seluruh PPNPN yang aktif di instansi untuk periode tahun 2026.
-            </p>
-            <button
-              onClick={() => {
-                const updated = employees.map(emp => emp.role === 'karyawan' ? { ...emp, cutiQuota: 12 } : emp);
-                setEmployees(updated);
-                saveEmployees(updated);
-                alert("Kuota cuti semua karyawan berhasil di-reset menjadi 12 Hari!");
-              }}
-              className="w-full py-3 px-4 bg-[#D4AF37] hover:bg-[#c29e2f] text-[#0A0A0B] text-xs font-bold uppercase tracking-widest transition-colors rounded-sm"
-            >
-              Generate Kuota Cuti (12 Hari)
-            </button>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+              <div>
+                <h1 className="text-xl font-bold text-slate-800 tracking-tight">SETTING KUOTA CUTI PPNPN</h1>
+                <p className="text-xs text-slate-500">Kelola sisa kuota cuti masing-masing PPNPN dan generate kuota secara massal.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column: Massive Generate */}
+              <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-sm space-y-4 h-fit">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-bold text-slate-800 text-sm">Generate Kuota Massal</h3>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Menghasilkan ulang/menambahkan kuota cuti tahunan default secara masif bagi seluruh PPNPN yang aktif untuk periode tahun berjalan.
+                </p>
+                <div className="space-y-2.5 pt-2">
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Apakah Anda yakin ingin mengatur ulang kuota cuti SEMUA pegawai menjadi 12 hari?")) {
+                        const updated = employees.map(emp => emp.role === 'karyawan' ? { ...emp, cutiQuota: 12 } : emp);
+                        setEmployees(updated);
+                        saveEmployees(updated);
+                        alert("Kuota cuti semua karyawan berhasil di-reset menjadi 12 Hari!");
+                      }
+                    }}
+                    className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider transition-colors rounded-lg flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <PlusSquare className="w-4 h-4" />
+                    <span>Generate Kuota (12 Hari)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Right/Middle Column: Individual Employee Settings */}
+              <div className="lg:col-span-2 bg-white p-5 border border-slate-200 rounded-xl shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <h3 className="font-bold text-slate-800 text-sm">Kuota Cuti Masing-masing PPNPN</h3>
+                  </div>
+                  
+                  {/* Search input */}
+                  <input
+                    type="text"
+                    placeholder="Cari PPNPN..."
+                    value={searchQuotaQuery}
+                    onChange={(e) => setSearchQuotaQuery(e.target.value)}
+                    className="text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 w-full sm:w-48 bg-slate-50"
+                  />
+                </div>
+
+                <div className="overflow-x-auto border border-slate-100 rounded-lg">
+                  <table className="w-full text-xs text-left text-slate-600 border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/80 text-slate-700 border-b border-slate-100">
+                        <th className="p-3 font-bold">Nama Pegawai / ID</th>
+                        <th className="p-3 font-bold">Jabatan</th>
+                        <th className="p-3 font-bold text-center w-36">Sisa Kuota Cuti</th>
+                        <th className="p-3 font-bold text-center w-28">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {employees
+                        .filter(emp => emp.role === 'karyawan' && (searchQuotaQuery ? emp.name.toLowerCase().includes(searchQuotaQuery.toLowerCase()) : true))
+                        .map(emp => (
+                          <tr key={emp.id} className="hover:bg-slate-50/40 transition-colors">
+                            <td className="p-3 font-bold text-slate-800">
+                              <div>{emp.name}</div>
+                              <div className="text-[9px] text-slate-400 font-mono mt-0.5">{emp.id}</div>
+                            </td>
+                            <td className="p-3 text-slate-500 font-medium">{emp.position || '-'}</td>
+                            <td className="p-3">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={employeeQuotas[emp.id] !== undefined ? employeeQuotas[emp.id] : emp.cutiQuota}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value, 10);
+                                    setEmployeeQuotas({
+                                      ...employeeQuotas,
+                                      [emp.id]: isNaN(val) ? 0 : val
+                                    });
+                                  }}
+                                  className="w-14 text-center text-xs py-1 px-1.5 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 font-bold bg-slate-50"
+                                />
+                                <span className="text-slate-400 text-[10px] font-semibold">Hari</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                onClick={() => {
+                                  const targetQuota = employeeQuotas[emp.id] !== undefined ? employeeQuotas[emp.id] : emp.cutiQuota;
+                                  const updated = employees.map(e => e.id === emp.id ? { ...e, cutiQuota: targetQuota } : e);
+                                  setEmployees(updated);
+                                  saveEmployees(updated);
+                                  
+                                  // Show temporary success feedback
+                                  setQuotaSuccessMap(prev => ({
+                                    ...prev,
+                                    [emp.id]: true
+                                  }));
+                                  setTimeout(() => {
+                                    setQuotaSuccessMap(prev => ({ ...prev, [emp.id]: false }));
+                                  }, 2000);
+                                }}
+                                className={`px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider rounded-lg transition-all shadow-sm cursor-pointer ${
+                                  quotaSuccessMap[emp.id]
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white scale-95'
+                                    : 'bg-amber-500 hover:bg-amber-600 text-white'
+                                }`}
+                              >
+                                {quotaSuccessMap[emp.id] ? 'Berhasil' : 'Simpan'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      }
+                      {employees.filter(emp => emp.role === 'karyawan' && (searchQuotaQuery ? emp.name.toLowerCase().includes(searchQuotaQuery.toLowerCase()) : true)).length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="p-5 text-center text-slate-400 font-semibold italic">Tidak ada pegawai PPNPN ditemukan</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         );
       case 'reset-aplikasi':
@@ -474,6 +1019,7 @@ export default function App() {
           localStorage.clear();
           localStorage.setItem('app_is_reset', 'true');
           setIsResetSuccess(true);
+          window.dispatchEvent(new Event('storage'));
         };
 
         return (
@@ -513,7 +1059,7 @@ export default function App() {
                 <div className="bg-rose-50/50 border border-rose-100 p-4 rounded-xl text-xs text-rose-700 space-y-2 font-medium">
                   <p className="font-bold">PERINGATAN KRITIKAL:</p>
                   <p className="leading-relaxed text-[11px]">
-                    Tindakan ini tidak dapat dibatalkan. Seluruh data transaksi, histori swafoto presensi, pengajuan cuti/izin, rincian logbook kerja harian, sisa kuota cuti, serta daftar pegawai PPNPN tambahan yang telah Anda buat akan <strong>DIPOSONGKAN/DIHAPUS secara permanen</strong> dan dikembalikan ke data simulasi default bawaan instansi.
+                    Tindakan ini tidak dapat dibatalkan. Seluruh data transaksi, histori swafoto presensi, pengajuan cuti/izin, rincian logbook kerja harian, sisa kuota cuti, serta daftar pegawai PPNPN tambahan yang telah Anda buat akan <strong>DIKOSONGKAN/DIHAPUS secara permanen</strong> dan dikembalikan ke data simulasi default bawaan instansi.
                   </p>
                 </div>
 
@@ -600,6 +1146,7 @@ export default function App() {
         activeView={activeView}
         onViewChange={setActiveView}
         onLogout={handleLogout}
+        supabaseConnected={supabaseConnected}
       />
 
       {/* 2. MAIN APP CONTENT CONTAINER */}

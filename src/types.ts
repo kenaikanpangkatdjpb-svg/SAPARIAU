@@ -44,6 +44,7 @@ export interface LeaveRequest {
   status: 'Pending' | 'Approved' | 'Rejected';
   createdAt: string;
   approvedBy?: string;
+  approvedDate?: string;
   workDays?: number;
   address?: string;
   backup1?: string;
