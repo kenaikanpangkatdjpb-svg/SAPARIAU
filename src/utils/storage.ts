@@ -1,5 +1,4 @@
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from '../types';
-
 // Default mock data to populate immediately and match the screenshot
 const DEFAULT_EMPLOYEES: Employee[] = [
   {
@@ -123,13 +122,21 @@ const seedAttendance = (): Attendance[] => {
     });
   }
 
-  // Today (June 24, 2026) attendance before checking in
-  // Jonathan has checked in
+  // Today's attendance before checking in (Jonathan has checked in for demo)
+  const getLocalDateString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayDateStr = getLocalDateString();
+
   list.push({
-    id: `att_jonathan_2026-06-24`,
+    id: `att_jonathan_${todayDateStr}`,
     employeeId: "jonathan",
     employeeName: "Jonathan",
-    date: "2026-06-24",
+    date: todayDateStr,
     checkIn: "08:15",
     checkOut: null,
     checkInPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
@@ -237,8 +244,11 @@ export const getStoredData = () => {
   let settings = localStorage.getItem(KEYS.SETTINGS);
 
   if (!employees) {
-    localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(DEFAULT_EMPLOYEES));
-    employees = JSON.stringify(DEFAULT_EMPLOYEES);
+    const initialEmployees = isReset
+      ? DEFAULT_EMPLOYEES.filter(e => e.role === 'admin')
+      : DEFAULT_EMPLOYEES;
+    localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(initialEmployees));
+    employees = JSON.stringify(initialEmployees);
   }
   if (!attendance) {
     const initialAttendance = isReset ? [] : seedAttendance();
@@ -418,6 +428,51 @@ export const uploadImageToDrive = async (base64Image: string, fileName: string):
     console.error("Google Drive Upload failed, using local fallback URL:", e);
     return base64Image; // Fallback to local representation
   }
+};
+
+// Function to compress base64 image to prevent QuotaExceededError in localStorage
+export const compressImage = (base64Str: string, maxWidth = 320, maxHeight = 320): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!base64Str || !base64Str.startsWith('data:image')) {
+      resolve(base64Str);
+      return;
+    }
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width = Math.round((width * maxHeight) / height);
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        // Export as JPEG with 0.6 quality
+        const compressed = canvas.toDataURL('image/jpeg', 0.6);
+        resolve(compressed);
+      } else {
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
+  });
 };
 
 // Apps Script Code Template to give to the User for copy-pasting
