@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { UserSquare2, Search, MapPin, Image as ImageIcon, Calendar, CheckCircle, Clock } from 'lucide-react';
+import { UserSquare2, Search, MapPin, Image as ImageIcon, Calendar, CheckCircle, Clock, Trash2 } from 'lucide-react';
 import { Employee, Attendance } from '../types';
 
 interface DetailAbsensiViewProps {
   user: Employee;
   employees: Employee[];
   attendance: Attendance[];
+  onResetAttendance?: (id: string) => Promise<void>;
 }
 
-export default function DetailAbsensiView({ user, employees, attendance }: DetailAbsensiViewProps) {
+export default function DetailAbsensiView({ user, employees, attendance, onResetAttendance }: DetailAbsensiViewProps) {
   const isAdmin = user.role === 'admin';
   
   const karyawanEmployees = useMemo(() => {
@@ -16,28 +17,46 @@ export default function DetailAbsensiView({ user, employees, attendance }: Detai
   }, [employees]);
 
   const [selectedEmpId, setSelectedEmpId] = useState(
-    isAdmin ? (karyawanEmployees[0]?.id || '') : user.id
+    isAdmin ? 'all' : user.id
   );
 
   // Synchronize and set a valid karyawan ID if the selected one is invalid or not a karyawan
   useEffect(() => {
     if (isAdmin) {
+      if (selectedEmpId === 'all') return;
       const exists = karyawanEmployees.some(e => e.id === selectedEmpId);
       if (!exists && karyawanEmployees.length > 0) {
-        setSelectedEmpId(karyawanEmployees[0].id);
+        setSelectedEmpId('all');
       }
     }
   }, [isAdmin, karyawanEmployees, selectedEmpId]);
 
   const selectedEmployee = useMemo(() => {
+    if (selectedEmpId === 'all') {
+      return {
+        id: 'all',
+        name: 'Semua Pegawai',
+        email: '',
+        role: 'karyawan' as const,
+        password: '',
+        position: 'Seluruh PPNPN',
+        joinDate: '',
+        cutiQuota: 0,
+      };
+    }
     return employees.find(e => e.id === selectedEmpId) || user;
   }, [employees, selectedEmpId, user]);
 
   const employeeAttendance = useMemo(() => {
+    if (selectedEmpId === 'all') {
+      return attendance
+        .filter(att => employees.some(e => e.id === att.employeeId && e.role === 'karyawan'))
+        .sort((a, b) => b.date.localeCompare(a.date));
+    }
     return attendance
       .filter(att => att.employeeId === selectedEmployee.id)
       .sort((a, b) => b.date.localeCompare(a.date)); // Sort latest first
-  }, [attendance, selectedEmployee]);
+  }, [attendance, selectedEmployee, selectedEmpId, employees]);
 
   return (
     <div id="detail-absensi-view" className="space-y-6">
@@ -61,6 +80,7 @@ export default function DetailAbsensiView({ user, employees, attendance }: Detai
               onChange={(e) => setSelectedEmpId(e.target.value)}
               className="text-xs font-bold px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500"
             >
+              <option className="bg-white" value="all">Semua Pegawai PPNPN</option>
               {employees.filter(e => e.role === 'karyawan').map(emp => (
                 <option className="bg-white" key={emp.id} value={emp.id}>
                   {emp.name} ({emp.id})
@@ -89,7 +109,7 @@ export default function DetailAbsensiView({ user, employees, attendance }: Detai
           </div>
 
           <div className="border-t border-slate-100 pt-4 space-y-3 text-xs text-slate-600 font-medium">
-            {selectedEmployee.role !== 'admin' && (
+            {selectedEmployee.role !== 'admin' && selectedEmployee.id !== 'all' && (
               <div className="flex justify-between">
                 <span className="text-slate-400 font-bold">Kuota Cuti</span>
                 <span className="text-[#0B1E43] font-extrabold">{selectedEmployee.cutiQuota} Hari</span>
@@ -116,20 +136,41 @@ export default function DetailAbsensiView({ user, employees, attendance }: Detai
               employeeAttendance.map((att) => (
                 <div key={att.id} className="p-5 space-y-4 hover:bg-slate-50/50 transition-colors">
                   
-                  {/* Date and Status Badge Row */}
+                   {/* Date and Status Badge Row */}
                   <div className="flex justify-between items-center flex-wrap gap-2">
                     <div className="flex items-center gap-2.5">
                       <Calendar className="w-4 h-4 text-slate-400" />
                       <span className="text-sm font-bold text-slate-800 font-mono">{att.date}</span>
+                      {selectedEmpId === 'all' && (
+                        <span className="px-2.5 py-0.5 rounded bg-blue-50 text-[#0B1E43] font-bold text-[10px] uppercase border border-blue-100">
+                          {att.employeeName}
+                        </span>
+                      )}
                     </div>
                     
-                    <span className={`px-2.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${
-                      att.checkInStatus === 'Tepat Waktu' 
-                        ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
-                        : 'bg-amber-50 text-amber-600 border-amber-100'
-                    }`}>
-                      {att.checkInStatus}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${
+                        att.checkInStatus === 'Tepat Waktu' 
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                          : 'bg-amber-50 text-amber-600 border-amber-100'
+                      }`}>
+                        {att.checkInStatus}
+                      </span>
+                      {isAdmin && onResetAttendance && (
+                        <button
+                          onClick={async () => {
+                            if (window.confirm(`Apakah Anda yakin ingin menghapus/mengatur ulang (reset) data absensi tanggal ${att.date} untuk pegawai ${att.employeeName}?`)) {
+                              await onResetAttendance(att.id);
+                              alert(`Data absensi tanggal ${att.date} berhasil di-reset!`);
+                            }
+                          }}
+                          className="p-1 text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg transition-all"
+                          title="Reset / Hapus Absensi Hari Ini"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Attendance Log Row: checkIn and checkOut details */}

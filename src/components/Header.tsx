@@ -67,10 +67,12 @@ export default function Header({ user, todayAttendance, settings, onOpenAbsenMod
           <h1 className="text-xl font-bold text-slate-800 tracking-tight">
             Selamat Datang Kembali, <span className="font-bold">{user.name}</span>
           </h1>
-          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${badgeBg}`}>
-            {statusText}
-          </span>
-          {todayAttendance?.checkInStatus === 'Terlambat' && (
+          {user.role === 'karyawan' && (
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${badgeBg}`}>
+              {statusText}
+            </span>
+          )}
+          {user.role === 'karyawan' && todayAttendance?.checkInStatus === 'Terlambat' && (
             <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-200">
               Terlambat
             </span>

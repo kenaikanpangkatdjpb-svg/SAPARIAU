@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Clock, Plus, CheckCircle, AlertCircle, Trash2, Printer, X, FileText, Send } from 'lucide-react';
-import { Employee, OfficeSettings } from '../types';
+import { Employee, LeaveRequest, OfficeSettings } from '../types';
 
 interface OvertimeRequest {
   id: string;
@@ -19,9 +19,18 @@ interface OvertimeRequest {
 interface PengajuanLemburViewProps {
   user: Employee;
   settings: OfficeSettings;
+  leaves?: LeaveRequest[];
+  onAddLeave?: (newLeave: LeaveRequest) => void;
+  onDeleteLeave?: (id: string) => void;
 }
 
-export default function PengajuanLemburView({ user, settings }: PengajuanLemburViewProps) {
+export default function PengajuanLemburView({ 
+  user, 
+  settings,
+  leaves,
+  onAddLeave,
+  onDeleteLeave
+}: PengajuanLemburViewProps) {
   const [requests, setRequests] = useState<OvertimeRequest[]>([]);
   const [formData, setFormData] = useState({
     date: '',
@@ -41,7 +50,7 @@ export default function PengajuanLemburView({ user, settings }: PengajuanLemburV
     addressLine: 'JALAN JENDERAL SUDIRMAN NO. 249 PEKANBARU 28116',
     phoneFaxLine: 'TELEPON 0761-22686, FAKSIMILE 0761-22647',
     websiteLine: 'http://www.djpbn.kemenkeu.go.id/kanwil/riau',
-    kopLogoUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=60'
+    kopLogoUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/df/Logo_Kementerian_Keuangan_Republik_Indonesia.png'
   });
 
   useEffect(() => {
@@ -50,6 +59,9 @@ export default function PengajuanLemburView({ user, settings }: PengajuanLemburV
       if (saved) {
         try {
           const data = JSON.parse(saved);
+          if (data.kopLogoUrl === 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=60') {
+            data.kopLogoUrl = 'https://upload.wikimedia.org/wikipedia/commons/d/df/Logo_Kementerian_Keuangan_Republik_Indonesia.png';
+          }
           setKopSettings(prev => ({
             ...prev,
             ...data
@@ -67,8 +79,10 @@ export default function PengajuanLemburView({ user, settings }: PengajuanLemburV
   // Load and seed initial overtime requests matching the high-fidelity screenshot
   useEffect(() => {
     const stored = localStorage.getItem(`overtime_requests_${user.id}`);
+    let loadedRequests: OvertimeRequest[] = [];
+
     if (stored) {
-      setRequests(JSON.parse(stored));
+      loadedRequests = JSON.parse(stored);
     } else {
       const isReset = localStorage.getItem('app_is_reset') === 'true';
       const initial: OvertimeRequest[] = isReset ? [] : [
@@ -110,10 +124,42 @@ export default function PengajuanLemburView({ user, settings }: PengajuanLemburV
           createdAt: '2026-06-26T17:00:00'
         }
       ];
-      setRequests(initial);
+      loadedRequests = initial;
       localStorage.setItem(`overtime_requests_${user.id}`, JSON.stringify(initial));
     }
-  }, [user]);
+
+    // Merge with synced leaves of type 'Lembur' for this employee
+    if (leaves) {
+      leaves.forEach(l => {
+        if (l.type === 'Lembur' && l.employeeId === user.id) {
+          const [startTime, endTime] = (l.address || '17:00-19:00').split('-');
+          const existingIndex = loadedRequests.findIndex(r => r.id === l.id);
+          const mapped: OvertimeRequest = {
+            id: l.id,
+            employeeId: l.employeeId,
+            employeeName: l.employeeName,
+            date: l.startDate,
+            hours: l.workDays || 2,
+            startTime: startTime || '17:00',
+            endTime: endTime || '19:00',
+            reason: l.reason,
+            status: l.status,
+            createdAt: l.createdAt,
+            approvedBy: l.approvedBy
+          };
+          if (existingIndex !== -1) {
+            loadedRequests[existingIndex] = mapped;
+          } else {
+            loadedRequests.push(mapped);
+          }
+        }
+      });
+    }
+
+    // Sort by createdAt descending
+    loadedRequests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    setRequests(loadedRequests);
+  }, [user, leaves]);
 
   const saveRequests = (updated: OvertimeRequest[]) => {
     setRequests(updated);
@@ -158,6 +204,24 @@ export default function PengajuanLemburView({ user, settings }: PengajuanLemburV
 
     const updated = [newReq, ...requests];
     saveRequests(updated);
+
+    if (onAddLeave) {
+      const leaveReq: LeaveRequest = {
+        id: newReq.id,
+        employeeId: newReq.employeeId,
+        employeeName: newReq.employeeName,
+        type: 'Lembur',
+        startDate: newReq.date,
+        endDate: newReq.date,
+        reason: newReq.reason,
+        status: 'Pending',
+        createdAt: newReq.createdAt,
+        workDays: newReq.hours,
+        address: `${newReq.startTime}-${newReq.endTime}`
+      };
+      onAddLeave(leaveReq);
+    }
+
     setFormData({ date: '', hours: '', reason: '' });
     
     setSuccessMsg("Surat Perintah Kerja Lembur berhasil dikirim! Menunggu persetujuan admin.");
@@ -172,6 +236,11 @@ export default function PengajuanLemburView({ user, settings }: PengajuanLemburV
     if (requestToDelete) {
       const updated = requests.filter(r => r.id !== requestToDelete);
       saveRequests(updated);
+
+      if (onDeleteLeave) {
+        onDeleteLeave(requestToDelete);
+      }
+
       setRequestToDelete(null);
     }
   };

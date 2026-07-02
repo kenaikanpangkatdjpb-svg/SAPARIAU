@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Printer, Search, Calendar, User, Clock, FileText, Check, X, Info } from 'lucide-react';
-import { Employee, Attendance, OfficeSettings } from '../types';
+import { Employee, Attendance, LeaveRequest, OfficeSettings } from '../types';
 
 interface OvertimeRequest {
   id: string;
@@ -20,12 +20,14 @@ interface RekapitulasiSpklViewProps {
   employees: Employee[];
   attendance: Attendance[];
   settings: OfficeSettings;
+  leaves?: LeaveRequest[];
 }
 
 export default function RekapitulasiSpklView({
   employees,
   attendance,
-  settings
+  settings,
+  leaves
 }: RekapitulasiSpklViewProps) {
   const [requests, setRequests] = useState<OvertimeRequest[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -40,7 +42,7 @@ export default function RekapitulasiSpklView({
     addressLine: 'JALAN JENDERAL SUDIRMAN NO. 249 PEKANBARU 28116',
     phoneFaxLine: 'TELEPON 0761-22686, FAKSIMILE 0761-22647',
     websiteLine: 'http://www.djpbn.kemenkeu.go.id/kanwil/riau',
-    kopLogoUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=60'
+    kopLogoUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/df/Logo_Kementerian_Keuangan_Republik_Indonesia.png'
   });
 
   useEffect(() => {
@@ -49,6 +51,9 @@ export default function RekapitulasiSpklView({
       if (saved) {
         try {
           const data = JSON.parse(saved);
+          if (data.kopLogoUrl === 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=60') {
+            data.kopLogoUrl = 'https://upload.wikimedia.org/wikipedia/commons/d/df/Logo_Kementerian_Keuangan_Republik_Indonesia.png';
+          }
           setKopSettings(prev => ({
             ...prev,
             ...data
@@ -66,15 +71,41 @@ export default function RekapitulasiSpklView({
   // Load and seed initial overtime requests matching the screenshot
   const loadRequests = () => {
     const allReqs: OvertimeRequest[] = [];
+
+    // 1. Add leaves of type 'Lembur' from Supabase
+    if (leaves) {
+      leaves.forEach(l => {
+        if (l.type === 'Lembur') {
+          const [startTime, endTime] = (l.address || '17:00-19:00').split('-');
+          allReqs.push({
+            id: l.id,
+            employeeId: l.employeeId,
+            employeeName: l.employeeName,
+            date: l.startDate,
+            startTime: startTime || '17:00',
+            endTime: endTime || '19:00',
+            reason: l.reason,
+            status: l.status,
+            createdAt: l.createdAt,
+            hours: l.workDays || 2,
+            approvedBy: l.approvedBy
+          });
+        }
+      });
+    }
     
-    // Read from all localStorage keys starting with 'overtime_requests_'
+    // 2. Read from all localStorage keys starting with 'overtime_requests_'
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('overtime_requests_')) {
         try {
           const items = JSON.parse(localStorage.getItem(key) || '[]');
           if (Array.isArray(items)) {
-            allReqs.push(...items);
+            items.forEach((item: any) => {
+              if (!allReqs.some(r => r.id === item.id)) {
+                allReqs.push(item);
+              }
+            });
           }
         } catch (e) {
           console.error('Failed to load overtimes from key:', key, e);
@@ -158,7 +189,7 @@ export default function RekapitulasiSpklView({
     };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [employees]);
+  }, [employees, leaves]);
 
   // Handle mass/individual checkbox change
   const handleSelectAll = (checked: boolean) => {

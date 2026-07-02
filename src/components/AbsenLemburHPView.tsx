@@ -17,6 +17,7 @@ interface OvertimeAttendanceRecord {
   clockInAddress: string | null;
   clockOutAddress: string | null;
   hours: number; // calculated when clocked out
+  status?: 'Pending' | 'Approved' | 'Rejected';
 }
 
 interface AbsenLemburHPViewProps {
@@ -287,7 +288,8 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
               clockIn: nowTime,
               clockInPhoto: photoBase64,
               clockInLocation: location,
-              clockInAddress: address
+              clockInAddress: address,
+              status: 'Pending'
             };
           } else {
             // Calculate hours when clocking out
@@ -306,7 +308,8 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
               clockOutPhoto: photoBase64,
               clockOutLocation: location,
               clockOutAddress: address,
-              hours: hrs > 0 ? hrs : 2 // default to 2 hours if clock in wasn't set or calculation is negative
+              hours: hrs > 0 ? hrs : 2, // default to 2 hours if clock in wasn't set or calculation is negative
+              status: 'Pending'
             };
           }
         } else {
@@ -324,7 +327,8 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
             clockOutLocation: absenType === 'pulang' ? location : null,
             clockInAddress: absenType === 'masuk' ? address : null,
             clockOutAddress: absenType === 'pulang' ? address : null,
-            hours: 0 // not fully clocked out yet
+            hours: 0, // not fully clocked out yet
+            status: 'Pending'
           };
           updatedRecords.push(newRec);
         }

@@ -33,9 +33,11 @@ export default function VerifikasiApprovalView({
   onApproveLeave,
   onApproveLogbook
 }: VerifikasiApprovalViewProps) {
-  const [activeTab, setActiveTab] = useState<'cuti-izin-lembur' | 'logbook'>('cuti-izin-lembur');
+  const [activeTab, setActiveTab] = useState<'cuti-izin-lembur' | 'absen-lembur' | 'logbook'>('cuti-izin-lembur');
   const [overtimes, setOvertimes] = useState<OvertimeRequest[]>([]);
+  const [overtimeAttendanceRecords, setOvertimeAttendanceRecords] = useState<any[]>([]);
   const [selectedRequestForPrint, setSelectedRequestForPrint] = useState<any>(null);
+  const [selectedPhotoModal, setSelectedPhotoModal] = useState<{ url: string; label: string } | null>(null);
 
   const [kopSettings, setKopSettings] = useState({
     headerLine1: 'KEMENTERIAN KEUANGAN REPUBLIK INDONESIA',
@@ -45,7 +47,7 @@ export default function VerifikasiApprovalView({
     addressLine: 'JALAN JENDERAL SUDIRMAN NO. 249 PEKANBARU 28116',
     phoneFaxLine: 'TELEPON 0761-22686, FAKSIMILE 0761-22647',
     websiteLine: 'http://www.djpbn.kemenkeu.go.id/kanwil/riau',
-    kopLogoUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=60'
+    kopLogoUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/df/Logo_Kementerian_Keuangan_Republik_Indonesia.png'
   });
 
   useEffect(() => {
@@ -54,6 +56,9 @@ export default function VerifikasiApprovalView({
       if (saved) {
         try {
           const data = JSON.parse(saved);
+          if (data.kopLogoUrl === 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=60') {
+            data.kopLogoUrl = 'https://upload.wikimedia.org/wikipedia/commons/d/df/Logo_Kementerian_Keuangan_Republik_Indonesia.png';
+          }
           setKopSettings(prev => ({
             ...prev,
             ...data
@@ -68,16 +73,42 @@ export default function VerifikasiApprovalView({
     return () => window.removeEventListener('kop_settings_changed', loadKop);
   }, []);
 
-  // Helper to load all overtime requests from localStorage
+  // Helper to load all overtime requests from localStorage and leaves prop
   const loadOvertimes = () => {
     const allReqs: OvertimeRequest[] = [];
+
+    // 1. Load from Supabase via leaves prop
+    if (leaves) {
+      leaves.forEach(l => {
+        if (l.type === 'Lembur') {
+          const [startTime, endTime] = (l.address || '17:00-19:00').split('-');
+          allReqs.push({
+            id: l.id,
+            employeeId: l.employeeId,
+            employeeName: l.employeeName,
+            date: l.startDate,
+            startTime: startTime || '17:00',
+            endTime: endTime || '19:00',
+            reason: l.reason,
+            status: l.status,
+            createdAt: l.createdAt
+          });
+        }
+      });
+    }
+
+    // 2. Load from localStorage as fallback
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('overtime_requests_')) {
         try {
           const items = JSON.parse(localStorage.getItem(key) || '[]');
           if (Array.isArray(items)) {
-            allReqs.push(...items);
+            items.forEach((item: any) => {
+              if (!allReqs.some(r => r.id === item.id)) {
+                allReqs.push(item);
+              }
+            });
           }
         } catch (e) {
           console.error('Failed to load overtimes from key:', key, e);
@@ -89,33 +120,90 @@ export default function VerifikasiApprovalView({
     setOvertimes(allReqs);
   };
 
+  const loadOvertimeAttendanceRecords = () => {
+    try {
+      const stored = localStorage.getItem('overtime_attendance_records');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          // Sort by date descending
+          const sorted = [...parsed].sort((a, b) => b.date.localeCompare(a.date));
+          setOvertimeAttendanceRecords(sorted);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load overtime attendance records:', e);
+    }
+  };
+
   useEffect(() => {
     loadOvertimes();
+    loadOvertimeAttendanceRecords();
+    const handleStorageChange = () => {
+      loadOvertimes();
+      loadOvertimeAttendanceRecords();
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, [leaves]); // Reload when leaves change to capture updates
 
   // Handle Overtime approval
   const handleApproveOvertime = (id: string, approve: boolean) => {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('overtime_requests_')) {
-        try {
-          const items = JSON.parse(localStorage.getItem(key) || '[]');
-          if (Array.isArray(items)) {
-            const index = items.findIndex(item => item.id === id);
-            if (index !== -1) {
-              items[index].status = approve ? 'Approved' : 'Rejected';
-              localStorage.setItem(key, JSON.stringify(items));
-              window.dispatchEvent(new Event('storage'));
-              break;
+    // Check if it's stored in Supabase (leaves prop)
+    const isLeaveOvertime = leaves.some(l => l.id === id && l.type === 'Lembur');
+    if (isLeaveOvertime) {
+      onApproveLeave(id, approve);
+    } else {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('overtime_requests_')) {
+          try {
+            const items = JSON.parse(localStorage.getItem(key) || '[]');
+            if (Array.isArray(items)) {
+              const index = items.findIndex(item => item.id === id);
+              if (index !== -1) {
+                items[index].status = approve ? 'Approved' : 'Rejected';
+                localStorage.setItem(key, JSON.stringify(items));
+                window.dispatchEvent(new Event('storage'));
+                break;
+              }
             }
+          } catch (e) {
+            console.error(e);
           }
-        } catch (e) {
-          console.error(e);
         }
       }
     }
     loadOvertimes();
     alert(`Pengajuan lembur telah ${approve ? 'DISETUJUI' : 'DITOLAK'} secara sukses.`);
+  };
+
+  const handleApproveOvertimeAttendance = (id: string, approve: boolean) => {
+    try {
+      const stored = localStorage.getItem('overtime_attendance_records');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const index = parsed.findIndex((item: any) => item.id === id);
+          if (index !== -1) {
+            parsed[index].status = approve ? 'Approved' : 'Rejected';
+            localStorage.setItem('overtime_attendance_records', JSON.stringify(parsed));
+            
+            // Sync to Supabase
+            const updatedRec = parsed[index];
+            import('../utils/supabase')
+              .then(m => m.upsertOvertimeToSupabase(updatedRec))
+              .catch(e => console.error('Failed to sync approved overtime to Supabase:', e));
+            
+            loadOvertimeAttendanceRecords();
+            window.dispatchEvent(new Event('storage'));
+            alert(`Presensi lembur HP telah ${approve ? 'DISETUJUI' : 'DITOLAK'} secara sukses.`);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to update overtime attendance record status:', e);
+    }
   };
 
   // Format date helper: YYYY-MM-DD -> DD/MM/YYYY
@@ -152,6 +240,7 @@ export default function VerifikasiApprovalView({
 
     // Add leaves
     leaves.forEach(l => {
+      if (l.type === 'Lembur') return;
       let typeLabel = 'Cuti Tahunan';
       if (l.type === 'Sakit') typeLabel = 'Cuti Sakit';
       if (l.type === 'Izin') typeLabel = 'Izin';
@@ -209,6 +298,7 @@ export default function VerifikasiApprovalView({
       {/* Navigation Tabs */}
       <div className="flex border-b border-slate-200 gap-6">
         <button
+          id="tab-cuti-izin-lembur"
           onClick={() => setActiveTab('cuti-izin-lembur')}
           className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
             activeTab === 'cuti-izin-lembur'
@@ -216,9 +306,21 @@ export default function VerifikasiApprovalView({
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
-          Cuti / Izin / Lembur
+          Cuti / Izin / SPKL (Lembur)
         </button>
         <button
+          id="tab-absen-lembur"
+          onClick={() => setActiveTab('absen-lembur')}
+          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+            activeTab === 'absen-lembur'
+              ? 'border-blue-600 text-blue-700'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          Presensi Lembur (HP)
+        </button>
+        <button
+          id="tab-logbook"
           onClick={() => setActiveTab('logbook')}
           className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
             activeTab === 'logbook'
@@ -325,6 +427,136 @@ export default function VerifikasiApprovalView({
                       </td>
                     </tr>
                   ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : activeTab === 'absen-lembur' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/75">
+                  <th className="py-4 px-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">ID Presensi</th>
+                  <th className="py-4 px-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Nama Pegawai</th>
+                  <th className="py-4 px-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Tanggal</th>
+                  <th className="py-4 px-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Clock In</th>
+                  <th className="py-4 px-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Clock Out</th>
+                  <th className="py-4 px-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider text-center">Durasi</th>
+                  <th className="py-4 px-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider text-center">Tindakan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {overtimeAttendanceRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-12 text-center text-xs font-semibold text-slate-400">
+                      Tidak ada rekaman absen lembur HP dari PPNPN yang perlu diverifikasi.
+                    </td>
+                  </tr>
+                ) : (
+                  overtimeAttendanceRecords.map((rec) => {
+                    const status = rec.status || 'Pending';
+                    const displayId = `HP-${rec.id.replace(/\D/g, '').slice(0, 10) || rec.id}`;
+
+                    return (
+                      <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
+                        {/* ID */}
+                        <td className="py-4 px-6 text-xs font-mono font-bold text-slate-800">
+                          {displayId}
+                        </td>
+                        {/* Nama */}
+                        <td className="py-4 px-6 text-xs font-bold text-slate-800">
+                          {rec.employeeName}
+                        </td>
+                        {/* Tanggal */}
+                        <td className="py-4 px-6 text-xs font-medium text-slate-500">
+                          {formatDateStr(rec.date)}
+                        </td>
+                        {/* Clock In */}
+                        <td className="py-4 px-6 text-xs text-slate-600">
+                          {rec.clockIn ? (
+                            <div className="flex items-center gap-2">
+                              <div>
+                                <span className="font-bold text-slate-800 font-mono">{rec.clockIn}</span>
+                                {rec.clockInAddress && (
+                                  <p className="text-[9px] text-slate-400 truncate max-w-[150px]" title={rec.clockInAddress}>
+                                    {rec.clockInAddress}
+                                  </p>
+                                )}
+                              </div>
+                              {rec.clockInPhoto && (
+                                <img
+                                  src={rec.clockInPhoto}
+                                  alt="In Selfie"
+                                  className="w-8 h-8 rounded-md object-cover border border-slate-200 cursor-pointer hover:scale-105 transition-all"
+                                  onClick={() => setSelectedPhotoModal({ url: rec.clockInPhoto, label: `Swafoto Clock In - ${rec.employeeName}` })}
+                                />
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 italic">Belum In</span>
+                          )}
+                        </td>
+                        {/* Clock Out */}
+                        <td className="py-4 px-6 text-xs text-slate-600">
+                          {rec.clockOut ? (
+                            <div className="flex items-center gap-2">
+                              <div>
+                                <span className="font-bold text-slate-800 font-mono">{rec.clockOut}</span>
+                                {rec.clockOutAddress && (
+                                  <p className="text-[9px] text-slate-400 truncate max-w-[150px]" title={rec.clockOutAddress}>
+                                    {rec.clockOutAddress}
+                                  </p>
+                                )}
+                              </div>
+                              {rec.clockOutPhoto && (
+                                <img
+                                  src={rec.clockOutPhoto}
+                                  alt="Out Selfie"
+                                  className="w-8 h-8 rounded-md object-cover border border-slate-200 cursor-pointer hover:scale-105 transition-all"
+                                  onClick={() => setSelectedPhotoModal({ url: rec.clockOutPhoto, label: `Swafoto Clock Out - ${rec.employeeName}` })}
+                                />
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 italic">Belum Out</span>
+                          )}
+                        </td>
+                        {/* Durasi */}
+                        <td className="py-4 px-6 text-xs text-center font-bold text-blue-700">
+                          {rec.hours ? `${rec.hours} Jam` : '0 Jam'}
+                        </td>
+                        {/* Tindakan */}
+                        <td className="py-4 px-6">
+                          <div className="flex items-center justify-center gap-2">
+                            {status === 'Pending' ? (
+                              <>
+                                <button
+                                  onClick={() => handleApproveOvertimeAttendance(rec.id, true)}
+                                  className="px-3 py-1.5 bg-[#10B981] hover:bg-[#059669] text-white text-[10px] font-bold rounded-md shadow-sm transition-colors"
+                                >
+                                  Setuju
+                                </button>
+                                <button
+                                  onClick={() => handleApproveOvertimeAttendance(rec.id, false)}
+                                  className="px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] text-white text-[10px] font-bold rounded-md shadow-sm transition-colors"
+                                >
+                                  Tolak
+                                </button>
+                              </>
+                            ) : (
+                              <span className={`px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider rounded ${
+                                status === 'Approved'
+                                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                  : 'bg-red-50 text-red-500 border border-red-100'
+                              }`}>
+                                {status === 'Approved' ? 'Disetujui' : 'Ditolak'}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -547,6 +779,30 @@ export default function VerifikasiApprovalView({
 
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Swafoto Selfie Expansion Modal */}
+      {selectedPhotoModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="relative max-w-lg w-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+              <span className="text-sm font-bold text-slate-100">{selectedPhotoModal.label}</span>
+              <button
+                onClick={() => setSelectedPhotoModal(null)}
+                className="text-slate-400 hover:text-slate-200 text-xs font-bold transition-colors px-3 py-1 bg-slate-800 rounded-md"
+              >
+                Tutup
+              </button>
+            </div>
+            <div className="p-6 flex items-center justify-center bg-slate-950/50">
+              <img
+                src={selectedPhotoModal.url}
+                alt="Expanded Selfie"
+                className="max-h-[60vh] max-w-full rounded-lg object-contain border border-slate-800 shadow-lg"
+              />
+            </div>
           </div>
         </div>
       )}

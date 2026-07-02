@@ -5,7 +5,8 @@ interface KopLogoSettingsViewProps {
   onSave?: (data: any) => void;
 }
 
-const DEFAULT_LOGO = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=60';
+const DEFAULT_LOGO = 'https://upload.wikimedia.org/wikipedia/commons/d/df/Logo_Kementerian_Keuangan_Republik_Indonesia.png';
+const OLD_DEFAULT_LOGO = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&auto=format&fit=crop&q=60';
 
 export default function KopLogoSettingsView({ onSave }: KopLogoSettingsViewProps) {
   const [headerLine1, setHeaderLine1] = useState('KEMENTERIAN KEUANGAN REPUBLIK INDONESIA');
@@ -34,7 +35,18 @@ export default function KopLogoSettingsView({ onSave }: KopLogoSettingsViewProps
         if (data.addressLine) setAddressLine(data.addressLine);
         if (data.phoneFaxLine) setPhoneFaxLine(data.phoneFaxLine);
         if (data.websiteLine) setWebsiteLine(data.websiteLine);
-        if (data.kopLogoUrl) setKopLogoUrl(data.kopLogoUrl);
+        
+        if (data.kopLogoUrl) {
+          if (data.kopLogoUrl === OLD_DEFAULT_LOGO) {
+            setKopLogoUrl(DEFAULT_LOGO);
+            // Update storage immediately with the real logo
+            const updated = { ...data, kopLogoUrl: DEFAULT_LOGO };
+            localStorage.setItem('kop_settings', JSON.stringify(updated));
+            window.dispatchEvent(new Event('kop_settings_changed'));
+          } else {
+            setKopLogoUrl(data.kopLogoUrl);
+          }
+        }
       } catch (e) {
         console.error('Failed to parse kop_settings', e);
       }

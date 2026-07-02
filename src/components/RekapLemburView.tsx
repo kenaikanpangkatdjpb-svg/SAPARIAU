@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Clock, Printer, CheckCircle, HelpCircle, FileSpreadsheet, Sparkles } from 'lucide-react';
-import { Employee, Attendance, OfficeSettings } from '../types';
+import { Employee, Attendance, LeaveRequest, OfficeSettings } from '../types';
 
 interface RekapLemburViewProps {
   employees: Employee[];
   attendance: Attendance[];
   settings: OfficeSettings;
+  leaves?: LeaveRequest[];
 }
 
 const MONTHS_LIST = [
@@ -25,7 +26,7 @@ const MONTHS_LIST = [
 
 const YEARS_LIST = ['2026', '2027', '2028', '2029', '2030'];
 
-export default function RekapLemburView({ employees, attendance, settings }: RekapLemburViewProps) {
+export default function RekapLemburView({ employees, attendance, settings, leaves }: RekapLemburViewProps) {
   const [selectedMonthNum, setSelectedMonthNum] = useState('05'); // Default to Mei 2026 to match screenshot
   const [selectedYear, setSelectedYear] = useState('2026');
   const [showPrintPreview, setShowPrintPreview] = useState(false);
@@ -144,23 +145,34 @@ export default function RekapLemburView({ employees, attendance, settings }: Rek
 
     // 1. Check if there is an approved overtime request (SPKL)
     let approvedOvertimeHours = 0;
-    try {
-      const allReqs: any[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('overtime_requests_')) {
-          const items = JSON.parse(localStorage.getItem(key) || '[]');
-          if (Array.isArray(items)) {
-            allReqs.push(...items);
+
+    // Check in leaves prop first (Supabase synced)
+    if (leaves) {
+      const match = leaves.find(l => l.employeeId === empId && l.type === 'Lembur' && l.startDate === dateStr && l.status === 'Approved');
+      if (match) {
+        approvedOvertimeHours = match.workDays || 2;
+      }
+    }
+
+    if (approvedOvertimeHours === 0) {
+      try {
+        const allReqs: any[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('overtime_requests_')) {
+            const items = JSON.parse(localStorage.getItem(key) || '[]');
+            if (Array.isArray(items)) {
+              allReqs.push(...items);
+            }
           }
         }
+        const match = allReqs.find(r => r.employeeId === empId && r.date === dateStr && r.status === 'Approved');
+        if (match) {
+          approvedOvertimeHours = match.hours;
+        }
+      } catch (e) {
+        console.warn("Failed to check approved overtime requests from storage:", e);
       }
-      const match = allReqs.find(r => r.employeeId === empId && r.date === dateStr && r.status === 'Approved');
-      if (match) {
-        approvedOvertimeHours = match.hours;
-      }
-    } catch (e) {
-      console.warn("Failed to check approved overtime requests from storage:", e);
     }
 
     if (approvedOvertimeHours > 0) {
