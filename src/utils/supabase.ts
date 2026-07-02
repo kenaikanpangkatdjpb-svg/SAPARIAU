@@ -280,6 +280,19 @@ export const upsertAttendanceToSupabase = async (att: Attendance, throwOnError =
   }
 };
 
+export const deleteAttendanceFromSupabase = async (id: string, throwOnError = false): Promise<boolean> => {
+  try {
+    const { error } = await supabase.from('ppnpn_attendance').delete().eq('id', id);
+    if (error) throw error;
+    return true;
+  } catch (e: any) {
+    const errMsg = e?.message || e?.details || JSON.stringify(e) || String(e);
+    console.error(`Failed to delete attendance record ${id} from Supabase: ${errMsg}`, e);
+    if (throwOnError) throw new Error(errMsg);
+    return false;
+  }
+};
+
 export const upsertLeaveToSupabase = async (leave: LeaveRequest, throwOnError = false): Promise<boolean> => {
   try {
     const payload = mapLeaveToDb(leave);
@@ -421,6 +434,30 @@ export const upsertOvertimeToSupabase = async (rec: OvertimeAttendanceRecord, th
     const errMsg = e?.message || e?.details || JSON.stringify(e) || String(e);
     console.error(`Failed to upsert overtime record ${rec.id} to Supabase: ${errMsg}`, e);
     if (throwOnError) throw new Error(errMsg);
+    return false;
+  }
+};
+
+export const clearTransactionsFromSupabase = async (): Promise<boolean> => {
+  try {
+    await supabase.from('ppnpn_attendance').delete().neq('id', '_none_');
+    await supabase.from('ppnpn_leaves').delete().neq('id', '_none_');
+    await supabase.from('ppnpn_logbooks').delete().neq('id', '_none_');
+    await supabase.from('ppnpn_overtime_records').delete().neq('id', '_none_');
+    return true;
+  } catch (e) {
+    console.error("Failed to clear transactions from Supabase:", e);
+    return false;
+  }
+};
+
+export const resetAllEmployeeQuotasInSupabase = async (): Promise<boolean> => {
+  try {
+    const { error } = await supabase.from('ppnpn_employees').update({ cuti_quota: 0 }).neq('id', '_none_');
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.error("Failed to reset employee quotas in Supabase:", e);
     return false;
   }
 };
