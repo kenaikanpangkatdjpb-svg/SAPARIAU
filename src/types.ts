@@ -37,7 +37,7 @@ export interface LeaveRequest {
   id: string;
   employeeId: string;
   employeeName: string;
-  type: 'Cuti' | 'Izin' | 'Sakit';
+  type: 'Cuti' | 'Izin' | 'Sakit' | 'Lembur';
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   reason: string;
@@ -79,3 +79,19 @@ export interface OfficeSettings {
   securityShiftMalamEnd?: string;
   securityShiftMalamOut?: string;
 }
+
+export interface OvertimeRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  hours: number;
+  reason: string;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  createdAt: string;
+  startTime?: string;
+  endTime?: string;
+  approvedBy?: string;
+  approvedDate?: string;
+}
+

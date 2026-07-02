@@ -17,6 +17,9 @@ import {
   upsertOvertimeToSupabase,
   deleteEmployeeFromSupabase,
   deleteLeaveFromSupabase,
+  deleteAttendanceFromSupabase,
+  clearTransactionsFromSupabase,
+  resetAllEmployeeQuotasInSupabase,
   SQL_CREATION_SCRIPT
 } from './utils/supabase';
 // Components
@@ -229,6 +232,35 @@ export default function App() {
     };
   }, []);
 
+  // One-time auto-reset of ZSA ZSA ANINDYA PUTERI tanggal 1 Juli 2026 as explicitly requested
+  useEffect(() => {
+    const performReset = async () => {
+      const match = attendance.find(
+        att => (att.employeeName?.toUpperCase().includes("ZSA ZSA") || att.employeeId === 'zaza') && 
+        att.date === '2026-07-01'
+      );
+      if (match) {
+        console.log("Found matching attendance record for ZSA ZSA on 2026-07-01. Resetting...");
+        const updated = attendance.filter(att => att.id !== match.id);
+        setAttendance(updated);
+        saveAttendance(updated);
+        
+        const isConnected = await checkSupabaseConnection();
+        if (isConnected) {
+          try {
+            await deleteAttendanceFromSupabase(match.id);
+            console.log("Successfully deleted ZSA ZSA attendance record on 2026-07-01 from Supabase.");
+          } catch (e) {
+            console.error("Failed to delete ZSA ZSA from Supabase:", e);
+          }
+        }
+      }
+    };
+    if (attendance.length > 0) {
+      performReset();
+    }
+  }, [attendance]);
+
   const handleSeedSupabase = async () => {
     const isConnected = await checkSupabaseConnection();
     if (!isConnected) {
@@ -333,6 +365,22 @@ export default function App() {
       alert(`Terjadi kesalahan sistem saat memigrasikan data ke Supabase: ${err.message || err}`);
     } finally {
       setIsSyncingSupabase(false);
+    }
+  };
+
+  const handleResetAttendance = async (id: string) => {
+    // 1. Remove from state
+    const updated = attendance.filter(att => att.id !== id);
+    setAttendance(updated);
+    saveAttendance(updated);
+
+    // 2. Delete from Supabase
+    if (supabaseConnected) {
+      try {
+        await deleteAttendanceFromSupabase(id, true);
+      } catch (err: any) {
+        console.error("Failed to delete attendance from Supabase:", err);
+      }
     }
   };
 
@@ -554,6 +602,39 @@ export default function App() {
     upsertLeaveToSupabase(finalLeave);
   };
 
+  const handleDeleteLeave = async (id: string) => {
+    const originalLeave = leaves.find(l => l.id === id);
+    if (!originalLeave) return;
+
+    // Refund quota if it was previously Approved and was a Cuti
+    if (originalLeave.status === 'Approved' && originalLeave.type === 'Cuti') {
+      const diffDaysOrig = originalLeave.workDays || 1;
+      setEmployees(prevEmps => {
+        const updatedEmps = prevEmps.map(emp => {
+          if (emp.id === originalLeave.employeeId) {
+            const newQuota = emp.cutiQuota + diffDaysOrig;
+            if (currentUser && currentUser.id === emp.id) {
+              setCurrentUser(prevUser => prevUser ? { ...prevUser, cutiQuota: newQuota } : null);
+            }
+            return { ...emp, cutiQuota: newQuota };
+          }
+          return emp;
+        });
+        saveEmployees(updatedEmps);
+        return updatedEmps;
+      });
+    }
+
+    const updated = leaves.filter(l => l.id !== id);
+    setLeaves(updated);
+    saveLeaves(updated);
+    
+    const isConnected = await checkSupabaseConnection();
+    if (isConnected) {
+      await deleteLeaveFromSupabase(id);
+    }
+  };
+
   // Logbook actions
   const handleSubmitLogbook = (content: string) => {
     if (!currentUser) return;
@@ -743,7 +824,7 @@ export default function App() {
           <ApprovalCutiView
             user={currentUser!}
             employees={employees}
-            leaves={currentUser!.role === 'admin' ? leaves.filter(l => l.type === 'Cuti') : leaves}
+            leaves={currentUser!.role === 'admin' ? leaves.filter(l => l.type === 'Cuti') : leaves.filter(l => l.type === 'Cuti')}
             onAddLeave={handleAddLeave}
             onApproveLeave={handleApproveLeave}
             onEditLeave={handleEditLeave}
@@ -776,6 +857,7 @@ export default function App() {
             employees={employees}
             attendance={attendance}
             settings={settings}
+            leaves={leaves}
           />
         );
       case 'kop-logo':
@@ -787,7 +869,7 @@ export default function App() {
           <ApprovalCutiView
             user={currentUser!}
             employees={employees}
-            leaves={currentUser!.role === 'admin' ? leaves.filter(l => l.type !== 'Cuti') : leaves}
+            leaves={currentUser!.role === 'admin' ? leaves.filter(l => l.type === 'Izin' || l.type === 'Sakit') : leaves.filter(l => l.type === 'Izin' || l.type === 'Sakit')}
             onAddLeave={handleAddLeave}
             onApproveLeave={handleApproveLeave}
             onEditLeave={handleEditLeave}
@@ -808,6 +890,7 @@ export default function App() {
             employees={employees}
             attendance={attendance}
             settings={settings}
+            leaves={leaves}
           />
         );
       case 'pengajuan-lembur':
@@ -815,6 +898,9 @@ export default function App() {
           <PengajuanLemburView
             user={currentUser!}
             settings={settings}
+            leaves={leaves}
+            onAddLeave={handleAddLeave}
+            onDeleteLeave={handleDeleteLeave}
           />
         );
       case 'absen-lembur-hp':
@@ -835,6 +921,7 @@ export default function App() {
             user={currentUser!}
             employees={employees}
             attendance={attendance}
+            onResetAttendance={handleResetAttendance}
           />
         );
       case 'logbook':
@@ -1012,14 +1099,57 @@ export default function App() {
           </div>
         );
       case 'reset-aplikasi':
-        const handleResetNow = () => {
+        const handleResetNow = async () => {
           if (resetKeyword.trim().toUpperCase() !== 'RESET') {
             return;
           }
-          localStorage.clear();
-          localStorage.setItem('app_is_reset', 'true');
-          setIsResetSuccess(true);
-          window.dispatchEvent(new Event('storage'));
+          try {
+            // 1. Keep employees but set sisa kuota cuti to 0
+            const updatedEmployees = employees.map(emp => ({
+              ...emp,
+              cutiQuota: 0
+            }));
+
+            // Save updated employees to localStorage
+            localStorage.setItem('ppnpn_employees', JSON.stringify(updatedEmployees));
+
+            // 2. Clear all transaction data from localStorage
+            localStorage.setItem('ppnpn_attendance', JSON.stringify([]));
+            localStorage.setItem('ppnpn_leaves', JSON.stringify([]));
+            localStorage.setItem('ppnpn_logbooks', JSON.stringify([]));
+            localStorage.setItem('overtime_attendance_records', JSON.stringify([]));
+
+            // Remove any keys starting with overtime_requests_
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i);
+              if (k && k.startsWith('overtime_requests_')) {
+                keysToRemove.push(k);
+              }
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+
+            // Set app is reset flag
+            localStorage.setItem('app_is_reset', 'true');
+
+            // 3. Update React States
+            setEmployees(updatedEmployees);
+            setAttendance([]);
+            setLeaves([]);
+            setLogbooks([]);
+
+            // 4. Sync with Supabase if connected
+            if (supabaseConnected) {
+              await clearTransactionsFromSupabase();
+              await resetAllEmployeeQuotasInSupabase();
+            }
+
+            setIsResetSuccess(true);
+            window.dispatchEvent(new Event('storage'));
+          } catch (error) {
+            console.error("Error during system reset:", error);
+            alert("Terjadi kesalahan saat mengosongkan data.");
+          }
         };
 
         return (
@@ -1032,7 +1162,7 @@ export default function App() {
                 <div className="space-y-2">
                   <h3 className="text-lg font-bold text-slate-800">Sistem Berhasil Direset!</h3>
                   <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                    Seluruh basis data, presensi kehadiran, logbook kegiatan, pengajuan cuti, dan konfigurasi instansi telah dikembalikan ke kondisi awal bawaan sistem.
+                    Seluruh data transaksi, histori swafoto presensi, pengajuan cuti/izin, pengajuan lembur, rincian logbook kerja harian, sisa kuota cuti, serta status verifikasi & approval telah DIHAPUS secara permanen. Data Pegawai tetap utuh dan dipertahankan.
                   </p>
                 </div>
                 <button
@@ -1059,7 +1189,7 @@ export default function App() {
                 <div className="bg-rose-50/50 border border-rose-100 p-4 rounded-xl text-xs text-rose-700 space-y-2 font-medium">
                   <p className="font-bold">PERINGATAN KRITIKAL:</p>
                   <p className="leading-relaxed text-[11px]">
-                    Tindakan ini tidak dapat dibatalkan. Seluruh data transaksi, histori swafoto presensi, pengajuan cuti/izin, rincian logbook kerja harian, sisa kuota cuti, serta daftar pegawai PPNPN tambahan yang telah Anda buat akan <strong>DIKOSONGKAN/DIHAPUS secara permanen</strong> dan dikembalikan ke data simulasi default bawaan instansi.
+                    Tindakan ini tidak dapat dibatalkan. Seluruh data transaksi, histori swafoto presensi, pengajuan cuti/izin, pengajuan lembur, rincian logbook kerja harian, sisa kuota cuti, serta status verifikasi & approval akan <strong>DIKOSONGKAN/DIHAPUS secara permanen</strong>. <strong>Data Pegawai/Akun PPNPN TIDAK akan dihapus</strong> agar tetap dapat digunakan untuk masuk ke dalam sistem.
                   </p>
                 </div>
 
