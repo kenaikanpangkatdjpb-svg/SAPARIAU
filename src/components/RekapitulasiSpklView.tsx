@@ -131,6 +131,7 @@ export default function RekapitulasiSpklView({
       ];
       setRequests(initial);
       localStorage.setItem('overtime_requests_maliq', JSON.stringify(initial));
+      window.dispatchEvent(new Event('storage'));
       
       // Check the approved item by default to match the screenshot
       setSelectedIds(['ov_1782447803487']);
@@ -151,6 +152,12 @@ export default function RekapitulasiSpklView({
 
   useEffect(() => {
     loadRequests();
+
+    const handleStorageChange = () => {
+      loadRequests();
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, [employees]);
 
   // Handle mass/individual checkbox change

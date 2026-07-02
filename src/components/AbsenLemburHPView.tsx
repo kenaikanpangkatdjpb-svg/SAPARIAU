@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Camera, MapPin, RefreshCw, CheckCircle, RotateCcw, AlertTriangle, ChevronLeft, History, Eye, Info, X, Clock, User } from 'lucide-react';
 import { Employee, OfficeSettings, Attendance } from '../types';
+import { compressImage } from '../utils/storage';
 
 interface OvertimeAttendanceRecord {
   id: string;
@@ -34,13 +35,15 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
   const [selectedDate, setSelectedDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
+  const [gpsMode, setGpsMode] = useState<'simulasi_in' | 'simulasi_out' | 'riil'>('simulasi_in');
   const [loadingGPS, setLoadingGPS] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number }>({ 
-    lat: settings.officeLat || -6.2000, 
-    lng: settings.officeLng || 106.8166 
+    lat: settings.officeLat, 
+    lng: settings.officeLng 
   });
-  const [address, setAddress] = useState<string>("Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia");
-  const [distance, setDistance] = useState<number>(2032); // Mock typical distance matching the phone screen
+  const [address, setAddress] = useState<string>("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;");
+  const [distance, setDistance] = useState<number>(3); // 3 meters (within radius)
+  const [gpsError, setGpsError] = useState<string | null>(null);
   const [logbookText, setLogbookText] = useState('');
   const [showInfoPresensi, setShowInfoPresensi] = useState(false);
   
@@ -72,8 +75,8 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
           clockOutPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
           clockInLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
           clockOutLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
-          clockInAddress: "Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia",
-          clockOutAddress: "Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia",
+          clockInAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
+          clockOutAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
           hours: 2.5
         },
         {
@@ -87,8 +90,8 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
           clockOutPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
           clockInLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
           clockOutLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
-          clockInAddress: "Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia",
-          clockOutAddress: "Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia",
+          clockInAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
+          clockOutAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
           hours: 3.0
         }
       ];
@@ -102,6 +105,12 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
     localStorage.setItem('overtime_attendance_records', JSON.stringify(updated));
     // Trigger storage event so that components recalculate if needed
     window.dispatchEvent(new Event('storage'));
+
+    // Upload to Supabase for real-time tracking
+    const currentRecord = updated.find(r => r.employeeId === user.id && r.date === selectedDate);
+    if (currentRecord) {
+      import('../utils/supabase').then(m => m.upsertOvertimeToSupabase(currentRecord)).catch(e => console.error(e));
+    }
   };
 
   // Run dynamic clocks
@@ -136,47 +145,81 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
     return Math.round(R * c);
   };
 
-  // Geolocation fetcher
-  const fetchGPS = () => {
+  const updateLocationByMode = (mode: 'simulasi_in' | 'simulasi_out' | 'riil') => {
     setLoadingGPS(true);
-    if (!navigator.geolocation) {
-      setLoadingGPS(false);
-      simulateGPS();
-      return;
-    }
+    setGpsError(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+    if (mode === 'simulasi_in') {
+      setTimeout(() => {
+        const lat = settings.officeLat;
+        const lng = settings.officeLng;
+        setLocation({ lat, lng });
+        setDistance(3); // 3 meters (inside)
+        setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Simulasi Dalam Kantor)");
+        setLoadingGPS(false);
+      }, 400);
+    } else if (mode === 'simulasi_out') {
+      setTimeout(() => {
+        const lat = settings.officeLat + 0.02;
+        const lng = settings.officeLng + 0.02;
         setLocation({ lat, lng });
         const dist = calculateDistance(lat, lng, settings.officeLat, settings.officeLng);
         setDistance(dist);
-        setAddress("Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia");
+        setAddress("Jalan Raya Pekanbaru - Bangkinang Km 15 (Simulasi Luar Kantor)");
         setLoadingGPS(false);
-      },
-      (error) => {
-        console.warn("Geolocation failed, using simulation:", error.message);
+      }, 400);
+    } else if (mode === 'riil') {
+      if (!navigator.geolocation) {
+        setGpsError("Geolocation tidak didukung oleh browser Anda.");
         setLoadingGPS(false);
-        simulateGPS();
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-    );
+        setGpsMode('simulasi_in');
+        updateLocationByMode('simulasi_in');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setLocation({ lat, lng });
+          const dist = calculateDistance(lat, lng, settings.officeLat, settings.officeLng);
+          setDistance(dist);
+          setAddress(`Lokasi Riil Perangkat (Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)})`);
+          setLoadingGPS(false);
+        },
+        (error) => {
+          console.error("Geolocation error:", error);
+          let errMsg = "Akses lokasi ditolak atau tidak tersedia.";
+          if (error.code === error.PERMISSION_DENIED) {
+            errMsg = "Izin lokasi ditolak. Harap izinkan lokasi di browser Anda.";
+          }
+          setGpsError(errMsg);
+          alert(`Gagal mengambil GPS Riil: ${errMsg}\nMengalihkan kembali ke Simulasi Dalam Kantor.`);
+          setLoadingGPS(false);
+          setGpsMode('simulasi_in');
+          // Call directly
+          const fallbackLat = settings.officeLat;
+          const fallbackLng = settings.officeLng;
+          setLocation({ lat: fallbackLat, lng: fallbackLng });
+          setDistance(3);
+          setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Simulasi Dalam Kantor)");
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
   };
 
-  const simulateGPS = () => {
-    let lat = settings.officeLat;
-    let lng = settings.officeLng;
-    // Add offset for simulation (outside direct office to match the high fidelity look)
-    lat += 0.0028;
-    lng -= 0.0022;
-    setLocation({ lat, lng });
-    const dist = calculateDistance(lat, lng, settings.officeLat, settings.officeLng);
-    setDistance(dist);
+  const handleGpsModeChange = (mode: 'simulasi_in' | 'simulasi_out' | 'riil') => {
+    setGpsMode(mode);
+    updateLocationByMode(mode);
+  };
+
+  // Geolocation fetcher
+  const fetchGPS = () => {
+    updateLocationByMode(gpsMode);
   };
 
   useEffect(() => {
-    fetchGPS();
+    updateLocationByMode('simulasi_in');
   }, [settings]);
 
   // Handle camera triggers
@@ -190,8 +233,10 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoBase64(reader.result as string);
+    reader.onloadend = async () => {
+      const rawBase64 = reader.result as string;
+      const compressed = await compressImage(rawBase64);
+      setPhotoBase64(compressed);
     };
     reader.readAsDataURL(file);
   };
@@ -215,6 +260,13 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // STRICT GEOLOCATION RADIUS GEOFENCING ENFORCEMENT
+    if (!inRadius) {
+      alert(`Absensi Lembur Ditolak! Anda berada di luar radius kantor yang diperbolehkan (${settings.officeRadiusMeters} meter).\nJarak Anda saat ini: ${distance} meter.`);
+      return;
+    }
+
     if (!photoBase64) {
       triggerCameraInput();
       return;
@@ -282,7 +334,7 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
         alert(`Absen Lembur ${absenType === 'masuk' ? 'Clock In' : 'Clock Out'} Berhasil Terkirim!\nData otomatis terekam di riwayat absen lembur Anda dan Rekap Lembur admin.`);
       } catch (err) {
         console.error(err);
-        alert("Terjadi kesalahan saat memproses absen lembur.");
+        alert("Terjadi kesalahan saat memproses absen lembur: " + (err instanceof Error ? err.message : String(err)));
       } finally {
         setIsSubmitting(false);
       }
@@ -383,7 +435,7 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
               </div>
 
               {/* Card 1: Live clock, dynamic date, map pin address & geofence */}
-              <div className="bg-white rounded-[24px] p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)] border border-slate-100/80 relative">
+              <div className="bg-white rounded-[24px] p-5 shadow-[0_4px_20px_rgba(0,0,0,0.02)] border border-slate-100/80 relative text-left">
                 {/* Refresh GPS icon */}
                 <button 
                   type="button" 
@@ -409,14 +461,59 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
                     
                     {/* Geofence status label */}
                     <div className="flex items-center gap-1.5 pt-0.5">
-                      <span className={`text-[10px] font-extrabold uppercase tracking-wider ${inRadius ? 'text-emerald-600' : 'text-blue-600'}`}>
+                      <span className={`text-[10px] font-extrabold uppercase tracking-wider ${inRadius ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {inRadius 
                           ? 'Di dalam area kantor' 
-                          : `DI LUAR RADIUS KANTOR ( +${distance} M )`
+                          : `DI LUAR RADIUS KANTOR ( +${distance} M ) (DITOLAK)`
                         }
                       </span>
                     </div>
                   </div>
+                </div>
+
+                {/* GPS Mode Selector for Geofence Testing */}
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    PILIH MODE GPS (SIMULASI / RIIL)
+                  </label>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px]">
+                    <button
+                      type="button"
+                      onClick={() => handleGpsModeChange('simulasi_in')}
+                      className={`py-1 rounded font-bold transition-all text-center ${
+                        gpsMode === 'simulasi_in' 
+                          ? 'bg-[#1E3A8A] text-white shadow-xs' 
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Dalam Kantor
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGpsModeChange('simulasi_out')}
+                      className={`py-1 rounded font-bold transition-all text-center ${
+                        gpsMode === 'simulasi_out' 
+                          ? 'bg-rose-600 text-white shadow-xs' 
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      Luar Kantor
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGpsModeChange('riil')}
+                      className={`py-1 rounded font-bold transition-all text-center ${
+                        gpsMode === 'riil' 
+                          ? 'bg-sky-600 text-white shadow-xs' 
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      GPS Riil HP
+                    </button>
+                  </div>
+                  {gpsError && (
+                    <p className="mt-1 text-[9px] text-rose-500 font-semibold">{gpsError}</p>
+                  )}
                 </div>
               </div>
 
@@ -514,15 +611,29 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
                   <div className="flex flex-col gap-2 pt-2">
                     <button
                       type="button"
-                      onClick={triggerCameraInput}
-                      className="w-full py-2.5 bg-[#1E3A8A] text-white hover:bg-blue-900 rounded-xl text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-2 shadow-sm"
+                      onClick={() => {
+                        if (!inRadius) {
+                          alert(`Absensi Lembur Ditolak! Anda berada di luar radius kantor yang diperbolehkan (${settings.officeRadiusMeters} meter).\nJarak Anda saat ini: ${distance} meter.`);
+                          return;
+                        }
+                        triggerCameraInput();
+                      }}
+                      className={`w-full py-2.5 text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-2 shadow-sm ${
+                        !inRadius ? 'bg-rose-600 hover:bg-rose-700' : 'bg-[#1E3A8A] hover:bg-blue-900'
+                      }`}
                     >
                       <Camera className="w-4 h-4" />
-                      <span>Gunakan Kamera HP</span>
+                      <span>{!inRadius ? 'Luar Radius (Ditolak)' : 'Gunakan Kamera HP'}</span>
                     </button>
                     <button
                       type="button"
-                      onClick={handleSimulatedSelfie}
+                      onClick={() => {
+                        if (!inRadius) {
+                          alert(`Absensi Lembur Ditolak! Anda berada di luar radius kantor yang diperbolehkan (${settings.officeRadiusMeters} meter).\nJarak Anda saat ini: ${distance} meter.`);
+                          return;
+                        }
+                        handleSimulatedSelfie();
+                      }}
                       className="w-full py-2 bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 rounded-xl text-[10.5px] font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-2"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
@@ -536,13 +647,17 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center justify-center gap-2"
+                    className={`w-full py-3 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-md transition-all flex items-center justify-center gap-2 ${
+                      !inRadius ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
                   >
                     {isSubmitting ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
                         <span>Mengirim Absen Lembur...</span>
                       </>
+                    ) : !inRadius ? (
+                      <span>Luar Radius (Ditolak)</span>
                     ) : (
                       <>
                         <CheckCircle className="w-4.5 h-4.5" />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, MapPin, Upload, RefreshCw, X, CheckCircle, Navigation, ChevronLeft, History, Eye, Info, Clock, User } from 'lucide-react';
 import { Attendance, OfficeSettings, Employee } from '../types';
-import { uploadImageToDrive } from '../utils/storage';
+import { uploadImageToDrive, compressImage } from '../utils/storage';
 
 interface AbsenModalProps {
   user: Employee;
@@ -16,19 +16,23 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [loadingGPS, setLoadingGPS] = useState(false);
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [address, setAddress] = useState<string | null>(null);
-  const [distance, setDistance] = useState<number | null>(null);
+  const [gpsMode, setGpsMode] = useState<'simulasi_in' | 'simulasi_out' | 'riil'>('simulasi_in');
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>({
+    lat: settings.officeLat,
+    lng: settings.officeLng
+  });
+  const [address, setAddress] = useState<string | null>("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;");
+  const [distance, setDistance] = useState<number | null>(4); // 4 meters
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [logbookText, setLogbookText] = useState('');
   const [showInfoPresensi, setShowInfoPresensi] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isSecurity = user.position?.toLowerCase().includes('satpam') || 
-                     user.position?.toLowerCase().includes('security') || 
-                     user.position?.toLowerCase().includes('keamanan') || 
-                     user.position?.toLowerCase().includes('penjaga');
+  const isSecurity = !!(user.position?.toLowerCase()?.includes('satpam') || 
+                     user.position?.toLowerCase()?.includes('security') || 
+                     user.position?.toLowerCase()?.includes('keamanan') || 
+                     user.position?.toLowerCase()?.includes('penjaga'));
 
   const getDetectedShift = (): 'pagi' | 'malam' | null => {
     if (!isSecurity) return null;
@@ -58,11 +62,6 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
     return () => clearInterval(interval);
   }, []);
 
-  // Get GPS on open
-  useEffect(() => {
-    fetchGPS();
-  }, []);
-
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371e3; // metres
     const phi1 = lat1 * Math.PI/180;
@@ -79,54 +78,81 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
     return Math.round(d);
   };
 
-  const fetchGPS = () => {
+  const updateLocationByMode = (mode: 'simulasi_in' | 'simulasi_out' | 'riil') => {
     setLoadingGPS(true);
     setGpsError(null);
-    
-    if (!navigator.geolocation) {
-      setGpsError("Browser Anda tidak mendukung Geolocation.");
-      setLoadingGPS(false);
-      simulateGPS();
-      return;
-    }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+    if (mode === 'simulasi_in') {
+      setTimeout(() => {
+        const lat = settings.officeLat;
+        const lng = settings.officeLng;
         setLocation({ lat, lng });
-        
-        // Calculate distance from office
+        setDistance(4); // 4 meters (inside)
+        setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Simulasi Dalam Kantor)");
+        setLoadingGPS(false);
+      }, 400);
+    } else if (mode === 'simulasi_out') {
+      setTimeout(() => {
+        const lat = settings.officeLat + 0.02;
+        const lng = settings.officeLng + 0.02;
+        setLocation({ lat, lng });
         const dist = calculateDistance(lat, lng, settings.officeLat, settings.officeLng);
         setDistance(dist);
-        setAddress("Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia");
+        setAddress("Jalan Raya Pekanbaru - Bangkinang Km 15 (Simulasi Luar Kantor)");
         setLoadingGPS(false);
-      },
-      (error) => {
-        console.warn("Geolocation failed, using simulation:", error.message);
-        setGpsError("Gagal mendeteksi GPS secara akurat. Menggunakan GPS simulasi kantor.");
+      }, 400);
+    } else if (mode === 'riil') {
+      if (!navigator.geolocation) {
+        setGpsError("Geolocation tidak didukung oleh browser Anda.");
         setLoadingGPS(false);
-        simulateGPS();
-      },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-    );
+        setGpsMode('simulasi_in');
+        updateLocationByMode('simulasi_in');
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setLocation({ lat, lng });
+          const dist = calculateDistance(lat, lng, settings.officeLat, settings.officeLng);
+          setDistance(dist);
+          setAddress(`Lokasi Riil Perangkat (Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)})`);
+          setLoadingGPS(false);
+        },
+        (error) => {
+          console.error("Geolocation error:", error);
+          let errMsg = "Akses lokasi ditolak atau tidak tersedia.";
+          if (error.code === error.PERMISSION_DENIED) {
+            errMsg = "Izin lokasi ditolak. Harap izinkan lokasi di browser Anda.";
+          }
+          setGpsError(errMsg);
+          alert(`Gagal mengambil GPS Riil: ${errMsg}\nMengalihkan kembali ke Simulasi Dalam Kantor.`);
+          setLoadingGPS(false);
+          setGpsMode('simulasi_in');
+          // Call directly
+          const fallbackLat = settings.officeLat;
+          const fallbackLng = settings.officeLng;
+          setLocation({ fallbackLat, lng: fallbackLng });
+          setDistance(4);
+          setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Simulasi Dalam Kantor)");
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
   };
 
-  const simulateGPS = () => {
-    // Proximity simulation: offset to trigger outer radius easily, matching the screenshot (+250m)
-    const isAtOffice = false; // Force outer radius to look like the mockup screenshot
-    let lat = settings.officeLat;
-    let lng = settings.officeLng;
-    
-    if (!isAtOffice) {
-      lat += 0.0028; // approximately 250 - 300 meters away
-      lng -= 0.0022;
-    }
+  const handleGpsModeChange = (mode: 'simulasi_in' | 'simulasi_out' | 'riil') => {
+    setGpsMode(mode);
+    updateLocationByMode(mode);
+  };
 
-    setLocation({ lat, lng });
-    const dist = calculateDistance(lat, lng, settings.officeLat, settings.officeLng);
-    setDistance(dist);
-    setAddress("Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia");
+  // Get GPS on open
+  useEffect(() => {
+    updateLocationByMode('simulasi_in');
+  }, []);
+
+  const fetchGPS = () => {
+    updateLocationByMode(gpsMode);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,8 +160,10 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setPhotoBase64(reader.result as string);
+    reader.onloadend = async () => {
+      const rawBase64 = reader.result as string;
+      const compressed = await compressImage(rawBase64);
+      setPhotoBase64(compressed);
     };
     reader.readAsDataURL(file);
   };
@@ -145,8 +173,18 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
     fileInputRef.current?.click();
   };
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleFormSubmit = async (e?: React.FormEvent) => {
+    if (e && typeof e.preventDefault === 'function') {
+      e.preventDefault();
+    }
+
+    // STRICT RADIUS GEOFENCING ENFORCEMENT
+    const inRadius = distance !== null && distance <= settings.officeRadiusMeters;
+    if (!inRadius) {
+      alert(`Absensi Ditolak! Anda berada di luar radius kantor yang diperbolehkan (${settings.officeRadiusMeters} meter).\nJarak Anda saat ini: ${distance} meter.`);
+      return;
+    }
+
     if (!photoBase64) {
       triggerCameraInput();
       return;
@@ -167,17 +205,18 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
         
         const activeShift = isSecurity ? detectedShift : user.shift;
         if (activeShift === 'pagi') {
-          const shiftEndStr = settings.securityShiftPagiEnd || "08:00";
+          const shiftEndStr = settings?.securityShiftPagiEnd || "08:00";
           const [h, m] = shiftEndStr.split(':').map(Number);
           endHour = h;
           endMinute = m;
         } else if (activeShift === 'malam') {
-          const shiftEndStr = settings.securityShiftMalamEnd || "16:00";
+          const shiftEndStr = settings?.securityShiftMalamEnd || "16:00";
           const [h, m] = shiftEndStr.split(':').map(Number);
           endHour = h;
           endMinute = m;
         } else {
-          const [h, m] = settings.checkInEnd.split(':').map(Number);
+          const checkInEndStr = settings?.checkInEnd || "08:15";
+          const [h, m] = checkInEndStr.split(':').map(Number);
           endHour = h;
           endMinute = m;
         }
@@ -193,8 +232,16 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
 
       const nowTime = new Date().toTimeString().split(' ')[0].slice(0, 5);
 
+      const getLocalDateString = () => {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
       const attendanceRecord: Partial<Attendance> = {
-        date: new Date().toISOString().split('T')[0],
+        date: getLocalDateString(),
         ...(type === 'masuk' ? {
           checkIn: nowTime,
           checkInPhoto: photoUrl,
@@ -216,7 +263,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
       onClose();
     } catch (err) {
       console.error(err);
-      alert("Terjadi kesalahan saat memproses absen.");
+      alert("Terjadi kesalahan saat memproses absen: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsUploading(false);
     }
@@ -316,7 +363,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
               <MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <p className="leading-relaxed text-[11.5px] font-medium text-slate-700">
-                  {address || "Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia"}
+                  {address || "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;"}
                 </p>
                 
                 {/* Geofence status label */}
@@ -330,6 +377,51 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
                   <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 cursor-pointer" />
                 </div>
               </div>
+            </div>
+
+            {/* GPS Mode Selector for Geofence Testing */}
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Pilih Mode GPS (Simulasi / Riil)
+              </label>
+              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => handleGpsModeChange('simulasi_in')}
+                  className={`py-1 rounded font-bold transition-all text-center ${
+                    gpsMode === 'simulasi_in' 
+                      ? 'bg-white text-emerald-600 shadow-xs' 
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Dalam Kantor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGpsModeChange('simulasi_out')}
+                  className={`py-1 rounded font-bold transition-all text-center ${
+                    gpsMode === 'simulasi_out' 
+                      ? 'bg-white text-rose-600 shadow-xs' 
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Luar Kantor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleGpsModeChange('riil')}
+                  className={`py-1 rounded font-bold transition-all text-center ${
+                    gpsMode === 'riil' 
+                      ? 'bg-white text-sky-600 shadow-xs' 
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  GPS Riil HP
+                </button>
+              </div>
+              {gpsError && (
+                <p className="mt-1 text-[9px] text-rose-500 font-semibold">{gpsError}</p>
+              )}
             </div>
           </div>
 
@@ -452,14 +544,26 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
             <div className="pt-2 mt-auto">
               <button
                 type="button"
-                onClick={photoBase64 ? handleFormSubmit : triggerCameraInput}
+                onClick={() => {
+                  if (!inRadius) {
+                    alert(`Absensi Ditolak! Anda berada di luar radius kantor yang diperbolehkan (${settings.officeRadiusMeters} meter).\nJarak Anda saat ini: ${distance} meter.`);
+                    return;
+                  }
+                  if (photoBase64) {
+                    handleFormSubmit(new Event('submit') as any);
+                  } else {
+                    triggerCameraInput();
+                  }
+                }}
                 disabled={isUploading}
                 className={`w-full py-4 px-6 rounded-full font-bold text-xs uppercase tracking-widest text-white shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 ${
                   isUploading
                     ? 'bg-slate-400 cursor-not-allowed shadow-none'
-                    : type === 'masuk'
-                      ? 'bg-sky-500 hover:bg-sky-600 shadow-sky-500/20'
-                      : 'bg-[#FF5C5C] hover:bg-[#e04f4f] shadow-red-500/20'
+                    : !inRadius
+                      ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/20'
+                      : type === 'masuk'
+                        ? 'bg-sky-500 hover:bg-sky-600 shadow-sky-500/20'
+                        : 'bg-[#FF5C5C] hover:bg-[#e04f4f] shadow-red-500/20'
                 }`}
               >
                 {isUploading ? (
@@ -467,6 +571,8 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
                     <RefreshCw className="w-4 h-4 animate-spin" />
                     <span>Mengirim...</span>
                   </>
+                ) : !inRadius ? (
+                  <span>Luar Radius (Ditolak)</span>
                 ) : photoBase64 ? (
                   <>
                     <CheckCircle className="w-4 h-4" />
@@ -549,7 +655,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
                       <MapPin className="w-4 h-4" />
                     </div>
                     <span className="text-[10px] leading-relaxed text-slate-600 font-medium">
-                      {address || "Jl. Padang No.5, Tengkerang Utara, Bukit Raya, Kota Pekanbaru, Riau 28126, Indonesia"}
+                      {address || "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;"}
                     </span>
                   </div>
 

@@ -118,6 +118,7 @@ export default function PengajuanLemburView({ user, settings }: PengajuanLemburV
   const saveRequests = (updated: OvertimeRequest[]) => {
     setRequests(updated);
     localStorage.setItem(`overtime_requests_${user.id}`, JSON.stringify(updated));
+    window.dispatchEvent(new Event('storage'));
   };
 
   const handleSubmit = (e: React.FormEvent) => {

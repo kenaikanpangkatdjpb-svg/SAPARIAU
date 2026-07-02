@@ -2,12 +2,60 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FileText, CalendarRange, CheckCircle2, XCircle, AlertCircle, Send, Printer, X, Eye } from 'lucide-react';
 import { Employee, LeaveRequest } from '../types';
 
+export const calculateWorkDays = (startDateStr: string, endDateStr: string): number => {
+  if (!startDateStr || !endDateStr) return 0;
+  const startParts = startDateStr.split('-').map(Number);
+  const endParts = endDateStr.split('-').map(Number);
+  if (startParts.length !== 3 || endParts.length !== 3) return 0;
+
+  const start = new Date(Date.UTC(startParts[0], startParts[1] - 1, startParts[2]));
+  const end = new Date(Date.UTC(endParts[0], endParts[1] - 1, endParts[2]));
+  if (end < start) return 0;
+
+  const holidays = [
+    '2026-01-01', // Tahun Baru
+    '2026-02-15', // Isra Mikraj
+    '2026-03-19', // Nyepi
+    '2026-03-20', // Idul Fitri
+    '2026-03-21', // Idul Fitri
+    '2026-04-03', // Wafat Yesus Kristus
+    '2026-05-01', // Hari Buruh
+    '2026-05-14', // Kenaikan Yesus Kristus
+    '2026-05-27', // Idul Adha
+    '2026-06-01', // Hari Lahir Pancasila
+    '2026-06-17', // Tahun Baru Islam
+    '2026-08-17', // Hari Kemerdekaan RI
+    '2026-08-26', // Maulid Nabi
+    '2026-12-25', // Hari Raya Natal
+  ];
+
+  let count = 0;
+  const current = new Date(start);
+  while (current <= end) {
+    const dayOfWeek = current.getUTCDay();
+    const y = current.getUTCFullYear();
+    const m = String(current.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(current.getUTCDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isHoliday = holidays.includes(dateStr);
+
+    if (!isWeekend && !isHoliday) {
+      count++;
+    }
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return count || 1; // Default to at least 1 day
+};
+
 interface ApprovalCutiViewProps {
   user: Employee;
   employees: Employee[];
   leaves: LeaveRequest[];
   onAddLeave: (newLeave: LeaveRequest) => void;
   onApproveLeave: (id: string, approve: boolean) => void;
+  onEditLeave: (updatedLeave: LeaveRequest) => void;
   viewType: 'cuti' | 'izin';
 }
 
@@ -17,6 +65,7 @@ export default function ApprovalCutiView({
   leaves,
   onAddLeave,
   onApproveLeave,
+  onEditLeave,
   viewType
 }: ApprovalCutiViewProps) {
   const isAdmin = user.role === 'admin';
@@ -35,6 +84,18 @@ export default function ApprovalCutiView({
 
   const [successMsg, setSuccessMsg] = useState('');
   const [selectedPrintLeave, setSelectedPrintLeave] = useState<LeaveRequest | null>(null);
+  const [editingLeave, setEditingLeave] = useState<LeaveRequest | null>(null);
+
+  // Pre-load html2pdf library for seamless PDF generation
+  useEffect(() => {
+    // @ts-ignore
+    if (!window.html2pdf) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
 
   const employeeCutiQuota = user.cutiQuota;
 
@@ -82,13 +143,8 @@ export default function ApprovalCutiView({
   // Calculate workDays automatically when startDate or endDate changes
   useEffect(() => {
     if (formData.startDate && formData.endDate) {
-      const start = new Date(formData.startDate);
-      const end = new Date(formData.endDate);
-      if (end >= start) {
-        const diffTime = Math.abs(end.getTime() - start.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        setFormData(prev => ({ ...prev, workDays: diffDays }));
-      }
+      const activeWorkDays = calculateWorkDays(formData.startDate, formData.endDate);
+      setFormData(prev => ({ ...prev, workDays: activeWorkDays }));
     }
   }, [formData.startDate, formData.endDate]);
 
@@ -257,11 +313,11 @@ export default function ApprovalCutiView({
 
             <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Jenis Pengajuan</label>
+                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Jenis Pengajuan</label>
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData({...formData, type: e.target.value as 'Cuti' | 'Izin' | 'Sakit'})}
-                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
                 >
                   <option value="Cuti">Cuti Tahunan</option>
                   <option value="Sakit">Cuti Sakit</option>
@@ -271,41 +327,41 @@ export default function ApprovalCutiView({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Mulai</label>
+                  <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Mulai</label>
                   <input
                     type="date"
                     required
                     value={formData.startDate}
                     onChange={(e) => setFormData({...formData, startDate: e.target.value})}
-                    className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 font-bold"
+                    className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Selesai</label>
+                  <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Selesai</label>
                   <input
                     type="date"
                     required
                     value={formData.endDate}
                     onChange={(e) => setFormData({...formData, endDate: e.target.value})}
-                    className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 font-bold"
+                    className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Jumlah Hari Kerja</label>
+                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Jumlah Cuti</label>
                 <input
                   type="number"
                   min={1}
                   required
                   value={formData.workDays}
                   onChange={(e) => setFormData({...formData, workDays: parseInt(e.target.value) || 1})}
-                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Alamat Selama Cuti</label>
+                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Alamat Selama Cuti</label>
                 <input
                   type="text"
                   required
@@ -317,11 +373,11 @@ export default function ApprovalCutiView({
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Petugas Penanggung Jawab 1 (Backup 1)</label>
+                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Petugas Penanggung Jawab 1 (Backup 1)</label>
                 <select
                   value={formData.backup1}
                   onChange={(e) => setFormData({...formData, backup1: e.target.value})}
-                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
                 >
                   {backupEmployees.map(name => (
                     <option key={name} value={name}>{name}</option>
@@ -330,11 +386,11 @@ export default function ApprovalCutiView({
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Petugas Penanggung Jawab 2 (Backup 2)</label>
+                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Petugas Penanggung Jawab 2 (Backup 2)</label>
                 <select
                   value={formData.backup2}
                   onChange={(e) => setFormData({...formData, backup2: e.target.value})}
-                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
                 >
                   {backupEmployees.map(name => (
                     <option key={name} value={name}>{name}</option>
@@ -343,7 +399,7 @@ export default function ApprovalCutiView({
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Keterangan Tambahan / Alasan</label>
+                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Keterangan Tambahan / Alasan</label>
                 <textarea
                   required
                   rows={3}
@@ -455,7 +511,7 @@ export default function ApprovalCutiView({
                         </td>
                         <td className="py-4 px-5">
                           <div className="flex items-center justify-center gap-1.5">
-                            {leave.status === 'Approved' ? (
+                            {leave.status === 'Approved' && (
                               <button
                                 onClick={() => setSelectedPrintLeave(leave)}
                                 className="px-3 py-1.5 bg-[#0B1E43] hover:bg-[#07142E] text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all shadow-sm cursor-pointer"
@@ -463,25 +519,38 @@ export default function ApprovalCutiView({
                                 <Printer className="w-3.5 h-3.5" />
                                 <span>PDF</span>
                               </button>
-                            ) : (
-                              isAdmin && leave.status === 'Pending' ? (
-                                <div className="flex gap-1.5">
-                                  <button
-                                    onClick={() => onApproveLeave(leave.id, true)}
-                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold uppercase rounded-md transition-all shadow-sm"
-                                  >
-                                    Setuju
-                                  </button>
-                                  <button
-                                    onClick={() => onApproveLeave(leave.id, false)}
-                                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold uppercase rounded-md transition-all shadow-sm"
-                                  >
-                                    Tolak
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-slate-300 text-[10px] font-semibold italic">No Action</span>
-                              )
+                            )}
+
+                            {/* Enable edit for employees on their own leaves, and for approved leaves */}
+                            {(!isAdmin || leave.employeeId === user.id || leave.status === 'Approved') && (
+                              <button
+                                onClick={() => setEditingLeave(leave)}
+                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all shadow-sm cursor-pointer"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>Ubah</span>
+                              </button>
+                            )}
+
+                            {isAdmin && leave.status === 'Pending' && (
+                              <div className="flex gap-1.5">
+                                <button
+                                  onClick={() => onApproveLeave(leave.id, true)}
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold uppercase rounded-md transition-all shadow-sm"
+                                >
+                                  Setuju
+                                </button>
+                                <button
+                                  onClick={() => onApproveLeave(leave.id, false)}
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold uppercase rounded-md transition-all shadow-sm"
+                                >
+                                  Tolak
+                                </button>
+                              </div>
+                            )}
+
+                            {isAdmin && leave.status === 'Rejected' && (
+                              <span className="text-rose-500 text-[10px] font-semibold italic">Ditolak</span>
                             )}
                           </div>
                         </td>
@@ -522,59 +591,59 @@ export default function ApprovalCutiView({
                 {/* Letter Content Block */}
                 <div>
                   {/* Top Right Date */}
-                  <div className="text-right font-sans text-xs mb-8 text-slate-800">
+                  <div className="text-right font-serif text-sm mb-8 text-slate-800">
                     Pekanbaru, {formatIndonesianDate(selectedPrintLeave.createdAt || selectedPrintLeave.startDate)}
                   </div>
 
                   {/* Hal & Address block */}
                   <div className="space-y-4 mb-8">
-                    <div className="flex">
-                      <span className="w-16 font-sans text-xs text-slate-500">Hal</span>
-                      <span className="font-bold">: Permohonan {selectedPrintLeave.type === 'Cuti' ? 'Cuti Tahunan' : selectedPrintLeave.type === 'Sakit' ? 'Cuti Sakit' : 'Izin'}</span>
+                    <div className="flex font-serif text-sm text-slate-800">
+                      <span className="w-16">Hal</span>
+                      <span className="font-normal">: Permohonan {selectedPrintLeave.type === 'Cuti' ? 'Cuti Tahunan' : selectedPrintLeave.type === 'Sakit' ? 'Cuti Sakit' : 'Izin'}</span>
                     </div>
 
-                    <div className="pt-2 font-sans text-xs text-slate-800 space-y-0.5">
+                    <div className="pt-2 font-serif text-sm text-slate-800 space-y-0.5">
                       <p>Kepada</p>
-                      <p className="font-bold">Yth. Kepala Subbagian TURT</p>
+                      <p className="font-normal">Yth. Kepala Subbagian Tata Usaha dan Rumah Tangga</p>
                       <p>di tempat</p>
                     </div>
                   </div>
 
                   {/* Body Greeting */}
                   <div className="space-y-4 mb-6">
-                    <p className="font-sans text-xs text-slate-800">Dengan hormat,</p>
-                    <p className="font-sans text-xs text-slate-800">Yang bertanda tangan di bawah ini:</p>
+                    <p className="font-serif text-sm text-slate-800">Dengan hormat,</p>
+                    <p className="font-serif text-sm text-slate-800">Yang bertanda tangan di bawah ini:</p>
                     
                     {/* Employee Profile */}
-                    <div className="pl-6 space-y-1 font-sans text-xs text-slate-800">
+                    <div className="pl-6 space-y-1 font-serif text-sm text-slate-800">
                       <div className="flex">
-                        <span className="w-24 font-bold">Nama</span>
+                        <span className="w-24">Nama</span>
                         <span>: {selectedPrintLeave.employeeName}</span>
                       </div>
                       <div className="flex">
-                        <span className="w-24 font-bold">Jabatan</span>
+                        <span className="w-24">Jabatan</span>
                         <span>: PPNPN (Pegawai Pemerintah Non Pegawai Negeri)</span>
                       </div>
                     </div>
 
                     {/* Request sentence */}
-                    <p className="font-sans text-xs text-slate-800 leading-relaxed text-justify">
+                    <p className="font-serif text-sm text-slate-800 leading-relaxed text-justify">
                       Bermaksud mengajukan permohonan {selectedPrintLeave.type === 'Cuti' ? 'cuti tahunan' : selectedPrintLeave.type === 'Sakit' ? 'cuti sakit' : 'izin'} selama {selectedPrintLeave.workDays || 1} ({terbilang(selectedPrintLeave.workDays || 1)}) hari kerja pada tanggal {formatDateDMY(selectedPrintLeave.startDate)} {selectedPrintLeave.startDate !== selectedPrintLeave.endDate ? `s/d ${formatDateDMY(selectedPrintLeave.endDate)}` : ''} untuk keperluan {selectedPrintLeave.reason}. Adapun alamat saya selama menjalani {selectedPrintLeave.type === 'Cuti' ? 'cuti tahunan' : selectedPrintLeave.type === 'Sakit' ? 'cuti sakit' : 'izin'} berlokasi di {selectedPrintLeave.address || '-'}.
                     </p>
 
-                    <p className="font-sans text-xs text-slate-800 leading-relaxed">
+                    <p className="font-serif text-sm text-slate-800 leading-relaxed">
                       Demikian surat permohonan ini saya ajukan. Atas perhatian dan perkenan Bapak, saya ucapkan terima kasih.
                     </p>
                   </div>
                 </div>
 
                 {/* Signatures Area matching second image perfectly */}
-                <div className="pt-8 border-t border-slate-100 font-sans text-xs text-slate-800">
+                <div className="pt-8 border-t border-slate-200 font-serif text-sm text-slate-800">
                   <div className="grid grid-cols-2 gap-8 text-center">
                     {/* Left: Approver */}
                     <div className="space-y-1">
                       <p>Menyetujui,</p>
-                      <p className="font-bold text-[11px] text-slate-500 uppercase tracking-wide">Kasubbag TURT,</p>
+                      <p className="text-sm text-slate-800 font-serif">Kasubbag Tata Usaha dan Rumah Tangga,</p>
                       <div className="h-16 flex items-center justify-center relative">
                         {/* Real hand-written vector ink style drawing */}
                         {selectedPrintLeave.type !== 'Cuti' && (
@@ -583,13 +652,14 @@ export default function ApprovalCutiView({
                           </svg>
                         )}
                       </div>
-                      <p className="font-bold underline text-slate-900">{selectedPrintLeave.approvedBy || 'Ahmad Nauval'}</p>
+                      <p className="text-slate-900 font-serif">{selectedPrintLeave.approvedBy || 'Ahmad Nauval'}</p>
+                      <p className="text-xs font-serif text-slate-500">NIP 198210042002121003</p>
                     </div>
 
                     {/* Right: Requester */}
                     <div className="space-y-1">
-                      <p className="text-slate-400 font-medium">Pemohon,</p>
-                      <p className="font-bold text-[11px] text-slate-500 uppercase tracking-wide invisible">Spacer</p>
+                      <p className="text-slate-800 font-serif">Pemohon,</p>
+                      <p className="text-sm text-slate-500 font-serif invisible">Spacer</p>
                       <div className="h-16 flex items-center justify-center relative">
                         {/* Real hand-written vector ink style drawing */}
                         {selectedPrintLeave.type !== 'Cuti' && (
@@ -598,37 +668,37 @@ export default function ApprovalCutiView({
                           </svg>
                         )}
                       </div>
-                      <p className="font-bold underline text-slate-900">{selectedPrintLeave.employeeName}</p>
+                      <p className="text-slate-900 font-serif">{selectedPrintLeave.employeeName}</p>
                     </div>
                   </div>
 
                   {/* Centered Backup Officers */}
                   <div className="mt-8 text-center space-y-3">
-                    <p className="font-bold text-[10px] uppercase tracking-wider text-slate-500">Petugas Penanggung Jawab,</p>
+                    <p className="text-xs uppercase tracking-wider text-slate-500 font-serif">Petugas Penanggung Jawab,</p>
                     
                     <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
                       {/* Backup 1 */}
-                      <div className="space-y-1">
-                        <div className="h-12 flex items-center justify-center">
+                      <div className="space-y-1 font-serif">
+                        <div className="h-12 flex items-center justify-center font-serif">
                           {selectedPrintLeave.type !== 'Cuti' && (
                             <svg width="90" height="30" viewBox="0 0 120 45" fill="none" className="text-blue-900/80">
                               <path d="M10 20 Q30 5 45 35 T85 15 T110 25 M35 15 C45 15, 40 30, 50 30" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           )}
                         </div>
-                        <p className="font-semibold text-slate-700 text-xs border-t border-slate-200 pt-1">{selectedPrintLeave.backup1 || 'Robby Andayani'}</p>
+                        <p className="text-slate-700 text-xs border-t border-slate-200 pt-1 font-serif">{selectedPrintLeave.backup1 || 'Robby Andayani'}</p>
                       </div>
 
                       {/* Backup 2 */}
-                      <div className="space-y-1">
-                        <div className="h-12 flex items-center justify-center">
+                      <div className="space-y-1 font-serif">
+                        <div className="h-12 flex items-center justify-center font-serif">
                           {selectedPrintLeave.type !== 'Cuti' && (
                             <svg width="90" height="30" viewBox="0 0 120 45" fill="none" className="text-slate-800/80">
                               <path d="M15 15 C30 35, 55 5, 75 35 C90 10, 100 25, 115 15 M45 25 H85" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           )}
                         </div>
-                        <p className="font-semibold text-slate-700 text-xs border-t border-slate-200 pt-1">{selectedPrintLeave.backup2 || 'Aditya Pratama'}</p>
+                        <p className="text-slate-700 text-xs border-t border-slate-200 pt-1 font-serif">{selectedPrintLeave.backup2 || 'Aditya Pratama'}</p>
                       </div>
                     </div>
                   </div>
@@ -646,7 +716,57 @@ export default function ApprovalCutiView({
               </button>
               <button
                 onClick={() => {
-                  window.print();
+                  const element = document.getElementById('print-letter-target');
+                  
+                  const runNativePrint = () => {
+                    try {
+                      window.print();
+                    } catch (printErr) {
+                      console.warn("Native print was blocked or failed:", printErr);
+                    }
+                  };
+
+                  if (element) {
+                    const downloadPDFAndMaybePrint = () => {
+                      // @ts-ignore
+                      const html2pdf = window.html2pdf;
+                      if (html2pdf) {
+                        const opt = {
+                          margin:       [0.5, 0.5, 0.5, 0.5],
+                          filename:     `Surat_Permohonan_Cuti_${selectedPrintLeave.employeeName.replace(/\s+/g, '_')}.pdf`,
+                          image:        { type: 'jpeg', quality: 0.98 },
+                          html2canvas:  { scale: 2, useCORS: true },
+                          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+                        };
+                        
+                        // Generate and save the PDF, then trigger native print cleanly
+                        html2pdf().from(element).set(opt).save()
+                          .then(() => {
+                            setTimeout(runNativePrint, 300);
+                          })
+                          .catch((err: any) => {
+                            console.error("html2pdf generation failed, falling back to print:", err);
+                            runNativePrint();
+                          });
+                      } else {
+                        runNativePrint();
+                      }
+                    };
+
+                    // @ts-ignore
+                    if (!window.html2pdf) {
+                      const script = document.createElement('script');
+                      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                      script.onload = () => {
+                        downloadPDFAndMaybePrint();
+                      };
+                      document.body.appendChild(script);
+                    } else {
+                      downloadPDFAndMaybePrint();
+                    }
+                  } else {
+                    runNativePrint();
+                  }
                 }}
                 className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
               >
@@ -654,6 +774,162 @@ export default function ApprovalCutiView({
                 <span>Cetak Dokumen Resmi (PDF)</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {editingLeave && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-100 max-w-lg w-full shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-[#0B1E43] px-6 py-4 text-white flex justify-between items-center">
+              <span className="font-bold text-sm flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-400" />
+                <span>Ubah Perbaikan Cuti ({editingLeave.id})</span>
+              </span>
+              <button 
+                onClick={() => setEditingLeave(null)}
+                className="text-white/80 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              onEditLeave(editingLeave);
+              setEditingLeave(null);
+            }} className="p-6 space-y-4 overflow-y-auto max-h-[80vh]">
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Tanggal Mulai
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editingLeave.startDate}
+                    onChange={(e) => {
+                      const newStart = e.target.value;
+                      const newEnd = editingLeave.endDate || newStart;
+                      const wDays = calculateWorkDays(newStart, newEnd);
+                      setEditingLeave({
+                        ...editingLeave,
+                        startDate: newStart,
+                        workDays: wDays
+                      });
+                    }}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs transition-all font-medium text-slate-700 bg-slate-50 hover:bg-slate-50/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Tanggal Selesai
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editingLeave.endDate}
+                    onChange={(e) => {
+                      const newEnd = e.target.value;
+                      const newStart = editingLeave.startDate || newEnd;
+                      const wDays = calculateWorkDays(newStart, newEnd);
+                      setEditingLeave({
+                        ...editingLeave,
+                        endDate: newEnd,
+                        workDays: wDays
+                      });
+                    }}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs transition-all font-medium text-slate-700 bg-slate-50 hover:bg-slate-50/50"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Jumlah Cuti
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={editingLeave.workDays || 1}
+                  onChange={(e) => setEditingLeave({ ...editingLeave, workDays: parseInt(e.target.value) || 1 })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs transition-all font-medium text-slate-700 bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Keperluan / Alasan
+                </label>
+                <textarea
+                  required
+                  rows={2}
+                  value={editingLeave.reason}
+                  onChange={(e) => setEditingLeave({ ...editingLeave, reason: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs transition-all font-medium text-slate-700 bg-slate-50"
+                  placeholder="Keterangan keperluan cuti..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Alamat Selama Cuti
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingLeave.address || ''}
+                  onChange={(e) => setEditingLeave({ ...editingLeave, address: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs transition-all font-medium text-slate-700 bg-slate-50"
+                  placeholder="Contoh: Jl. Sudirman No. 12 Pekanbaru"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Pegawai Pengganti 1
+                  </label>
+                  <input
+                    type="text"
+                    value={editingLeave.backup1 || ''}
+                    onChange={(e) => setEditingLeave({ ...editingLeave, backup1: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs transition-all font-medium text-slate-700 bg-slate-50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Pegawai Pengganti 2
+                  </label>
+                  <input
+                    type="text"
+                    value={editingLeave.backup2 || ''}
+                    onChange={(e) => setEditingLeave({ ...editingLeave, backup2: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs transition-all font-medium text-slate-700 bg-slate-50"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingLeave(null)}
+                  className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl transition-all shadow-md cursor-pointer"
+                >
+                  Simpan Perbaikan
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

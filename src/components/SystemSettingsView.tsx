@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Settings, Save, Clock, MapPin, Key, Database, ShieldAlert, Code2, Copy, Check, Shield } from 'lucide-react';
+import { Settings, Save, Clock, MapPin, Key, Database, ShieldAlert, Code2, Copy, Check, Shield, RefreshCw } from 'lucide-react';
 import { Employee, OfficeSettings } from '../types';
 import { GOOGLE_APPS_SCRIPT_CODE } from '../utils/storage';
+import { SQL_CREATION_SCRIPT } from '../utils/supabase';
 
 const OFFICE_PRESETS = [
   { name: "Kantor Wilayah DJPb Provinsi Riau (Pekanbaru)", lat: 0.4735, lng: 101.4478, radius: 500 },
@@ -15,11 +16,23 @@ interface SystemSettingsViewProps {
   settings: OfficeSettings;
   onSaveSettings: (settings: OfficeSettings) => void;
   onChangePassword: (old: string, updated: string) => boolean;
+  supabaseConnected?: boolean;
+  onSeedSupabase?: () => Promise<void>;
+  isSyncingSupabase?: boolean;
 }
 
-export default function SystemSettingsView({ user, settings, onSaveSettings, onChangePassword }: SystemSettingsViewProps) {
+export default function SystemSettingsView({ 
+  user, 
+  settings, 
+  onSaveSettings, 
+  onChangePassword,
+  supabaseConnected = false,
+  onSeedSupabase,
+  isSyncingSupabase = false
+}: SystemSettingsViewProps) {
   const isAdmin = user.role === 'admin';
   const [copied, setCopied] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
   const [successSettings, setSuccessSettings] = useState(false);
   const [successPassword, setSuccessPassword] = useState(false);
 
@@ -492,6 +505,69 @@ export default function SystemSettingsView({ user, settings, onSaveSettings, onC
               </button>
             </div>
           )}
+
+          {/* Card: Supabase Integration Panel */}
+          <div className="bg-[#161618] p-5 border border-white/10 rounded-none space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-[#D4AF37]" />
+                <h4 className="font-serif text-[#F4F4F5] text-sm">Supabase Cloud Database</h4>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${supabaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span className="text-[10px] font-mono uppercase tracking-wider text-[#A1A1AA]">
+                  {supabaseConnected ? 'Connected' : 'Offline'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#71717A] leading-relaxed font-sans">
+              Aplikasi terhubung ke Supabase secara real-time. Jika database Anda baru/kosong, silakan jalankan SQL Script inisialisasi di bawah ini pada SQL Editor Supabase Anda, lalu klik "Inisialisasi & Migrasi Data" untuk memigrasikan akun & absen lokal ke Cloud.
+            </p>
+
+            <div className="space-y-2">
+              <button
+                id="copy-supabase-sql-btn"
+                onClick={() => {
+                  navigator.clipboard.writeText(SQL_CREATION_SCRIPT);
+                  setCopiedSql(true);
+                  setTimeout(() => setCopiedSql(false), 2000);
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-[#0F0F11] hover:bg-white/5 text-[#E4E4E7] border border-white/10 rounded-none text-[10px] uppercase tracking-wider transition-all font-bold"
+              >
+                {copiedSql ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-400 font-bold">SQL Script Berhasil Disalin!</span>
+                  </>
+                ) : (
+                  <>
+                    <Code2 className="w-4 h-4 text-[#D4AF37]" />
+                    <span>Salin SQL Schema Script</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                id="seed-supabase-btn"
+                disabled={isSyncingSupabase || !supabaseConnected || !onSeedSupabase}
+                onClick={onSeedSupabase}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-[#D4AF37] hover:bg-[#c29e2f] disabled:bg-[#1e1e24] disabled:text-[#52525b] text-[#0A0A0B] rounded-none text-[10px] uppercase tracking-wider transition-all font-bold"
+              >
+                {isSyncingSupabase ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Mensinkronkan Data...</span>
+                  </>
+                ) : (
+                  <>
+                    <Database className="w-4 h-4" />
+                    <span>Inisialisasi & Migrasi Data</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
 
         </div>
 

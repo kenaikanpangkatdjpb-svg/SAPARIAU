@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { UserSquare2, Search, MapPin, Image as ImageIcon, Calendar, CheckCircle, Clock } from 'lucide-react';
 import { Employee, Attendance } from '../types';
 
@@ -10,7 +10,24 @@ interface DetailAbsensiViewProps {
 
 export default function DetailAbsensiView({ user, employees, attendance }: DetailAbsensiViewProps) {
   const isAdmin = user.role === 'admin';
-  const [selectedEmpId, setSelectedEmpId] = useState(isAdmin ? (employees[1]?.id || '') : user.id);
+  
+  const karyawanEmployees = useMemo(() => {
+    return employees.filter(e => e.role === 'karyawan');
+  }, [employees]);
+
+  const [selectedEmpId, setSelectedEmpId] = useState(
+    isAdmin ? (karyawanEmployees[0]?.id || '') : user.id
+  );
+
+  // Synchronize and set a valid karyawan ID if the selected one is invalid or not a karyawan
+  useEffect(() => {
+    if (isAdmin) {
+      const exists = karyawanEmployees.some(e => e.id === selectedEmpId);
+      if (!exists && karyawanEmployees.length > 0) {
+        setSelectedEmpId(karyawanEmployees[0].id);
+      }
+    }
+  }, [isAdmin, karyawanEmployees, selectedEmpId]);
 
   const selectedEmployee = useMemo(() => {
     return employees.find(e => e.id === selectedEmpId) || user;
@@ -72,18 +89,12 @@ export default function DetailAbsensiView({ user, employees, attendance }: Detai
           </div>
 
           <div className="border-t border-slate-100 pt-4 space-y-3 text-xs text-slate-600 font-medium">
-            <div className="flex justify-between">
-              <span className="text-slate-400 font-bold">Email Kantor</span>
-              <span className="text-slate-700 font-mono">{selectedEmployee.email}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400 font-bold">Tanggal Gabung</span>
-              <span className="text-slate-700">{selectedEmployee.joinDate}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400 font-bold">Kuota Cuti</span>
-              <span className="text-[#0B1E43] font-extrabold">{selectedEmployee.cutiQuota} Hari</span>
-            </div>
+            {selectedEmployee.role !== 'admin' && (
+              <div className="flex justify-between">
+                <span className="text-slate-400 font-bold">Kuota Cuti</span>
+                <span className="text-[#0B1E43] font-extrabold">{selectedEmployee.cutiQuota} Hari</span>
+              </div>
+            )}
           </div>
         </div>
 

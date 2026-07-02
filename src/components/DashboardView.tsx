@@ -58,7 +58,13 @@ export default function DashboardView({
   const [quickLogText, setQuickLogText] = useState('');
   const isAdmin = user.role === 'admin';
 
-  const todayDateStr = "2026-06-24"; // System static mock date
+  const todayDateStr = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
 
   if (!isAdmin) {
     const todayAttendance = attendance.find(att => att.employeeId === user.id && att.date === todayDateStr) || null;

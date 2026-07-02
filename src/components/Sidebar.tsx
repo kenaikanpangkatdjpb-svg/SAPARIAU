@@ -31,9 +31,10 @@ interface SidebarProps {
   activeView: string;
   onViewChange: (view: string) => void;
   onLogout: () => void;
+  supabaseConnected?: boolean;
 }
 
-export default function Sidebar({ user, activeView, onViewChange, onLogout }: SidebarProps) {
+export default function Sidebar({ user, activeView, onViewChange, onLogout, supabaseConnected = false }: SidebarProps) {
   const isAdmin = user.role === 'admin';
 
   // Specific menu items for PPNPN Employee to match the screenshot
@@ -70,7 +71,7 @@ export default function Sidebar({ user, activeView, onViewChange, onLogout }: Si
     { id: 'settings', name: 'Jam Operasional', icon: Settings },
     { id: 'kop-logo', name: 'KOP & Logo', icon: Image },
     { id: 'ganti-password', name: 'Ganti Password', icon: Key },
-    { id: 'generate-cuti', name: 'Generate Kuota Cuti', icon: PlusSquare },
+    { id: 'generate-cuti', name: 'Setting Cuti PPNPN', icon: CalendarCheck },
     { id: 'reset-aplikasi', name: 'Reset Data Aplikasi', icon: RefreshCw },
   ];
 
@@ -160,16 +161,25 @@ export default function Sidebar({ user, activeView, onViewChange, onLogout }: Si
       </div>
 
       {/* Footer block: Active Session & Keluar with specific layout matching the screenshot */}
-      <div className="p-4 border-t border-slate-800 bg-[#081324] flex items-center justify-between text-[11px]">
-        <span className="text-slate-400 font-medium">Active Session</span>
-        <button
-          id="btn-logout"
-          onClick={onLogout}
-          className="flex items-center gap-1 text-red-400 hover:text-red-300 font-bold uppercase tracking-wider transition-colors"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          <span>Keluar</span>
-        </button>
+      <div className="p-4 border-t border-slate-800 bg-[#081324] flex flex-col gap-2.5 text-[11px]">
+        <div className="flex items-center justify-between">
+          <span className="text-slate-400 font-medium">Active Session</span>
+          <button
+            id="btn-logout"
+            onClick={onLogout}
+            className="flex items-center gap-1 text-red-400 hover:text-red-300 font-bold uppercase tracking-wider transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Keluar</span>
+          </button>
+        </div>
+        <div className="flex items-center justify-between border-t border-slate-800/60 pt-2 text-[9px] uppercase tracking-wider text-slate-500 font-bold font-mono">
+          <span>Cloud Database</span>
+          <span className="flex items-center gap-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${supabaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+            <span>{supabaseConnected ? 'Sync Active' : 'Offline'}</span>
+          </span>
+        </div>
       </div>
     </aside>
   );

@@ -7,7 +7,7 @@ interface PegawaiViewProps {
   employees: Employee[];
   onAddEmployee: (newEmp: Employee) => void;
   onDeleteEmployee: (id: string) => void;
-  onEditEmployee: (updatedEmp: Employee) => void;
+  onEditEmployee: (updatedEmp: Employee, oldId?: string) => void;
 }
 
 export default function PegawaiView({ currentUser, employees, onAddEmployee, onDeleteEmployee, onEditEmployee }: PegawaiViewProps) {
@@ -49,18 +49,25 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
 
     if (editingEmployee) {
       // Edit Flow
+      if (cleanUsername !== editingEmployee.id.toLowerCase() && employees.some(emp => emp.id.toLowerCase() === cleanUsername)) {
+        alert("Username sudah terdaftar!");
+        return;
+      }
+
       const updatedEmp: Employee = {
         ...editingEmployee,
+        id: cleanUsername,
+        email: `${cleanUsername}@ppnpn.com`,
         name: formData.name,
         position: formData.position,
         password: formData.password,
         role: formData.role,
-        cutiQuota: Number(formData.cutiQuota),
+        cutiQuota: formData.role === 'admin' ? 12 : Number(formData.cutiQuota),
         shift: formData.shift ? (formData.shift as 'pagi' | 'malam') : undefined,
         status: formData.status
       };
 
-      onEditEmployee(updatedEmp);
+      onEditEmployee(updatedEmp, editingEmployee.id);
       setSuccessMsg(`Pegawai ${formData.name} berhasil diperbarui!`);
       setEditingEmployee(null);
       
@@ -91,7 +98,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
         password: formData.password,
         role: formData.role,
         joinDate: new Date().toISOString().split('T')[0],
-        cutiQuota: Number(formData.cutiQuota),
+        cutiQuota: formData.role === 'admin' ? 12 : Number(formData.cutiQuota),
         shift: formData.shift ? (formData.shift as 'pagi' | 'malam') : undefined,
         status: formData.status
       };
@@ -302,10 +309,12 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
                     </div>
 
                     <div className="flex items-center gap-2.5 justify-between sm:justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100">
-                      <div className="text-left sm:text-right font-mono mr-2">
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Kuota Cuti Sisa</p>
-                        <p className="text-xs font-bold text-slate-700">{emp.cutiQuota} Hari</p>
-                      </div>
+                      {emp.role !== 'admin' && (
+                        <div className="text-left sm:text-right font-mono mr-2">
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Kuota Cuti Sisa</p>
+                          <p className="text-xs font-bold text-slate-700">{emp.cutiQuota} Hari</p>
+                        </div>
+                      )}
                       
                       {/* Edit Button */}
                       <button
@@ -370,19 +379,11 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
               <input
                 type="text"
                 required
-                disabled={!!editingEmployee}
                 value={formData.username}
                 onChange={(e) => setFormData({...formData, username: e.target.value})}
                 placeholder="Contoh: lucas, rudi"
-                className={`w-full text-xs px-3.5 py-2.5 border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                  editingEmployee 
-                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' 
-                    : 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-blue-500'
-                }`}
+                className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               />
-              {editingEmployee && (
-                <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Username (ID) tidak dapat diubah.</p>
-              )}
             </div>
 
             <div className="space-y-1.5">
@@ -424,7 +425,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className={formData.role === 'admin' ? 'space-y-1.5' : 'grid grid-cols-2 gap-4'}>
               <div className="space-y-1.5">
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Peran / Role</label>
                 <select
@@ -437,16 +438,18 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
                 </select>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Kuota Cuti</label>
-                <input
-                  type="number"
-                  required
-                  value={formData.cutiQuota}
-                  onChange={(e) => setFormData({...formData, cutiQuota: Number(e.target.value)})}
-                  className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
+              {formData.role !== 'admin' && (
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Kuota Cuti</label>
+                  <input
+                    type="number"
+                    required
+                    value={formData.cutiQuota}
+                    onChange={(e) => setFormData({...formData, cutiQuota: Number(e.target.value)})}
+                    className="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              )}
             </div>
 
 

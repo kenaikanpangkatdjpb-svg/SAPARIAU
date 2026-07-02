@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Clock, Printer, CheckCircle, HelpCircle, FileSpreadsheet, Sparkles } from 'lucide-react';
 import { Employee, Attendance, OfficeSettings } from '../types';
 
@@ -29,7 +29,17 @@ export default function RekapLemburView({ employees, attendance, settings }: Rek
   const [selectedMonthNum, setSelectedMonthNum] = useState('05'); // Default to Mei 2026 to match screenshot
   const [selectedYear, setSelectedYear] = useState('2026');
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1.15);
   const [signDate, setSignDate] = useState<string>('2026-05-02');
+  const [localStorageTrigger, setLocalStorageTrigger] = useState(0);
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setLocalStorageTrigger(prev => prev + 1);
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   React.useEffect(() => {
     setSignDate(`${selectedYear}-${selectedMonthNum}-02`);
@@ -164,10 +174,10 @@ export default function RekapLemburView({ employees, attendance, settings }: Rek
       let limitHour = 17;
       let limitMinute = 0;
 
-      const isSecurity = emp?.position?.toLowerCase().includes('satpam') || 
-                         emp?.position?.toLowerCase().includes('security') || 
-                         emp?.position?.toLowerCase().includes('keamanan') || 
-                         emp?.position?.toLowerCase().includes('penjaga');
+      const isSecurity = !!(emp?.position?.toLowerCase()?.includes('satpam') || 
+                         emp?.position?.toLowerCase()?.includes('security') || 
+                         emp?.position?.toLowerCase()?.includes('keamanan') || 
+                         emp?.position?.toLowerCase()?.includes('penjaga'));
 
       let activeShift = emp?.shift;
       if (isSecurity) {
@@ -302,7 +312,7 @@ export default function RekapLemburView({ employees, attendance, settings }: Rek
       ...row,
       no: idx + 1
     }));
-  }, [employeesList, totalDays, selectedMonthNum, selectedYear, attendance]);
+  }, [employeesList, totalDays, selectedMonthNum, selectedYear, attendance, localStorageTrigger]);
 
   // Aggregate totals
   const tableTotals = useMemo(() => {
@@ -332,14 +342,215 @@ export default function RekapLemburView({ employees, attendance, settings }: Rek
     setShowPrintPreview(true);
   };
 
+  const handleExportExcel = () => {
+    const year = selectedYear;
+    const monthName = selectedMonthLabel.toUpperCase();
+    
+    // Header section mimicking Excel style
+    let rowsHtml = `
+      <tr>
+        <td colspan="28" style="font-size: 14px; font-weight: bold; text-align: center; border: none; height: 30px; vertical-align: middle;">
+          DAFTAR PEMBAYARAN PERHITUNGAN UANG LEMBUR DAN UANG MAKAN LEMBUR PPNPN
+        </td>
+      </tr>
+      <tr>
+        <td colspan="28" style="font-size: 12px; font-weight: bold; text-align: center; border: none; height: 25px; vertical-align: middle;">
+          BULAN ${monthName} TAHUN ${year}
+        </td>
+      </tr>
+      <tr>
+        <td colspan="28" style="border: none; height: 15px;"></td>
+      </tr>
+    `;
+
+    // Add table headers
+    rowsHtml += `
+      <tr style="font-weight: bold; text-align: center; background-color: #f2f2f2;">
+        <th rowspan="3" style="border: 1px solid #000000; vertical-align: middle;">No</th>
+        <th rowspan="3" style="border: 1px solid #000000; vertical-align: middle; text-align: left; width: 250px;">Nama/NIK</th>
+        <th rowspan="3" style="border: 1px solid #000000; vertical-align: middle;">Gol</th>
+        <th colspan="16" style="border: 1px solid #000000; vertical-align: middle; background-color: #e2e8f0;">JUMLAH JAM KEGIATAN LEMBUR TANGGAL</th>
+        <th colspan="2" style="border: 1px solid #000000; vertical-align: middle;">JUMLAH JAM</th>
+        <th rowspan="3" style="border: 1px solid #000000; vertical-align: middle; width: 80px;">JUMLAH MAKAN LEMBUR (HARI)</th>
+        <th colspan="2" style="border: 1px solid #000000; vertical-align: middle;">JUMLAH UANG (RP)</th>
+        <th rowspan="3" style="border: 1px solid #000000; vertical-align: middle; width: 100px;">JUMLAH DARI KOLOM (RP)</th>
+        <th rowspan="3" style="border: 1px solid #000000; vertical-align: middle; width: 80px;">POT PPH 21</th>
+        <th rowspan="3" style="border: 1px solid #000000; vertical-align: middle; width: 100px; background-color: #e2e8f0;">JUMLAH NETO (RP)</th>
+        <th rowspan="3" style="border: 1px solid #000000; vertical-align: middle; width: 180px;">TANDA TANGAN/NO. REKENING</th>
+      </tr>
+      <tr style="font-weight: bold; text-align: center; background-color: #f2f2f2;">
+    `;
+
+    // Days 1-15
+    for (let day = 1; day <= 15; day++) {
+      const info = getDayInfo(day);
+      const bg = info.isHoliday ? 'background-color: #d1fae5;' : 'background-color: #ffffff;';
+      rowsHtml += `<th style="border: 1px solid #000000; ${bg} width: 25px;">${day}</th>`;
+    }
+    // padding for 16th cell on row 1
+    rowsHtml += `
+        <th style="border: 1px solid #000000; background-color: #f2f2f2; width: 25px;"></th>
+        <th rowspan="2" style="border: 1px solid #000000; vertical-align: middle; width: 50px;">HARI KERJA</th>
+        <th rowspan="2" style="border: 1px solid #000000; vertical-align: middle; width: 50px;">HARI LIBUR</th>
+        <th rowspan="2" style="border: 1px solid #000000; vertical-align: middle; width: 90px;">LEMBUR</th>
+        <th rowspan="2" style="border: 1px solid #000000; vertical-align: middle; width: 90px;">MAKAN LEMBUR</th>
+      </tr>
+      <tr style="font-weight: bold; text-align: center; background-color: #f2f2f2;">
+    `;
+
+    // Days 16-31
+    for (let day = 16; day <= 31; day++) {
+      const isValid = day <= totalDays;
+      if (isValid) {
+        const info = getDayInfo(day);
+        const bg = info.isHoliday ? 'background-color: #d1fae5;' : 'background-color: #ffffff;';
+        rowsHtml += `<th style="border: 1px solid #000000; ${bg} width: 25px;">${day}</th>`;
+      } else {
+        rowsHtml += `<th style="border: 1px solid #000000; background-color: #f2f2f2; width: 25px;"></th>`;
+      }
+    }
+
+    rowsHtml += `</tr>`;
+
+    // Add employee rows
+    calculatedData.forEach((row, idx) => {
+      const rek = row.employee.id === 'lucas' ? 'MANDIRI 10800223' : row.employee.id === 'jonathan' ? 'BRI 00129931' : 'BNI 09223321';
+      
+      // Sub-row 1
+      rowsHtml += `<tr>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle;">${row.no}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; vertical-align: middle; font-weight: bold;">${row.employee.name.toUpperCase()}<br/><span style="font-size: 8px; font-weight: normal; color: #555555;">${row.employee.id}</span></td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle; color: #777777;">-</td>`;
+
+      // Upper dates (1 to 15)
+      for (let day = 1; day <= 15; day++) {
+        const hours = getOvertimeHours(row.employee.id, day);
+        const info = getDayInfo(day);
+        const bg = info.isHoliday ? 'background-color: #f0fdf4;' : 'background-color: #ffffff;';
+        const color = hours > 0 ? 'color: #1d4ed8; font-weight: bold;' : 'color: #cccccc;';
+        rowsHtml += `<td style="border: 1px solid #000000; text-align: center; ${bg} ${color}">${hours > 0 ? hours : ''}</td>`;
+      }
+      // pad element for col 16
+      rowsHtml += `<td style="border: 1px solid #000000; background-color: #f2f2f2;"></td>`;
+
+      // Summary columns for row 1
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle; font-weight: bold;">${row.workDayHours}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle; font-weight: bold;">${row.holidayHours}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle; font-weight: bold;">${row.mealDays}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: right; vertical-align: middle; font-weight: bold;">${row.uangLembur.toLocaleString('id-ID')}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: right; vertical-align: middle; font-weight: bold;">${row.uangMakan.toLocaleString('id-ID')}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: right; vertical-align: middle; font-weight: bold; background-color: #fafafa;">${row.totalUang.toLocaleString('id-ID')}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle; color: #aaaaaa;">${row.potPph > 0 ? row.potPph.toLocaleString('id-ID') : ''}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; text-align: right; vertical-align: middle; font-weight: bold; background-color: #e2e8f0;">${row.neto.toLocaleString('id-ID')}</td>`;
+      rowsHtml += `<td rowspan="2" style="border: 1px solid #000000; vertical-align: middle; font-size: 8px;">${idx + 1}. .............................<br/><span style="color: #777777;">REK: ${rek}</span></td>`;
+      rowsHtml += `</tr>`;
+
+      // Sub-row 2
+      rowsHtml += `<tr>`;
+      // Lower dates (16 to 31)
+      for (let day = 16; day <= 31; day++) {
+        const isValid = day <= totalDays;
+        const hours = isValid ? getOvertimeHours(row.employee.id, day) : 0;
+        const info = isValid ? getDayInfo(day) : null;
+        const bg = info?.isHoliday ? 'background-color: #f0fdf4;' : (isValid ? 'background-color: #ffffff;' : 'background-color: #f2f2f2;');
+        const color = hours > 0 ? 'color: #1d4ed8; font-weight: bold;' : 'color: #cccccc;';
+        rowsHtml += `<td style="border: 1px solid #000000; text-align: center; ${bg} ${color}">${(isValid && hours > 0) ? hours : ''}</td>`;
+      }
+      rowsHtml += `</tr>`;
+    });
+
+    // Add totals row
+    rowsHtml += `
+      <tr style="font-weight: bold; background-color: #e2e8f0;">
+        <td rowspan="2" colspan="3" style="border: 1px solid #000000; text-align: center; vertical-align: middle;">JUMLAH TOTAL</td>
+        <td colspan="16" style="border: 1px solid #000000; background-color: #f2f2f2;"></td>
+        <td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle;">${tableTotals.workDayHours}</td>
+        <td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle;">${tableTotals.holidayHours}</td>
+        <td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle;">${tableTotals.mealDays}</td>
+        <td rowspan="2" style="border: 1px solid #000000; text-align: right; vertical-align: middle;">${tableTotals.uangLembur.toLocaleString('id-ID')}</td>
+        <td rowspan="2" style="border: 1px solid #000000; text-align: right; vertical-align: middle;">${tableTotals.uangMakan.toLocaleString('id-ID')}</td>
+        <td rowspan="2" style="border: 1px solid #000000; text-align: right; vertical-align: middle;">${tableTotals.totalUang.toLocaleString('id-ID')}</td>
+        <td rowspan="2" style="border: 1px solid #000000; text-align: center; vertical-align: middle; color: #777777;">-</td>
+        <td rowspan="2" style="border: 1px solid #000000; text-align: right; vertical-align: middle; background-color: #cbd5e1;">${tableTotals.neto.toLocaleString('id-ID')}</td>
+        <td rowspan="2" style="border: 1px solid #000000;"></td>
+      </tr>
+      <tr style="font-weight: bold; background-color: #e2e8f0;">
+        <td colspan="16" style="border: 1px solid #000000; background-color: #f2f2f2; height: 15px;"></td>
+      </tr>
+    `;
+
+    // Signature Rows
+    rowsHtml += `
+      <tr><td colspan="28" style="border: none; height: 30px;"></td></tr>
+      <tr>
+        <td colspan="5" style="border: none; text-align: center; vertical-align: top; font-family: sans-serif;">
+          Mengetahui<br/>
+          <b>Kepala Bagian Umum</b><br/><br/><br/><br/>
+          <u>Kartika Chandra</u><br/>
+          NIP 19710205 199603 2 001
+        </td>
+        <td colspan="18" style="border: none;"></td>
+        <td colspan="5" style="border: none; text-align: center; vertical-align: top; font-family: sans-serif;">
+          Pekanbaru, ${formatIndonesianDate(signDate)}<br/><br/><br/><br/><br/>
+          <u>Rusdi Z</u><br/>
+          NIP 19781218 200501 1 002
+        </td>
+      </tr>
+    `;
+
+    const htmlContent = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8"/>
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Rekap Lembur PPNPN</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayGridlines/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <style>
+          table { border-collapse: collapse; font-family: Calibri, sans-serif; font-size: 11px; }
+          th, td { border: 1px solid #000000; padding: 5px; }
+          .text-left { text-align: left; }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .font-bold { font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <table>
+          ${rowsHtml}
+        </table>
+      </body>
+      </html>
+    `;
+
+    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `REKAP_LEMBUR_PPNPN_${monthName}_${year}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const renderDocumentContent = (isModal: boolean) => {
     return (
       <div 
         id="print-rekap-lembur" 
         className={isModal 
-          ? "bg-white text-slate-800 p-12 md:p-16 w-full relative flex flex-col gap-6" 
+          ? "bg-white text-slate-800 p-12 md:p-16 w-full relative flex flex-col gap-6 origin-top" 
           : "bg-white text-slate-800 p-6 border border-slate-200 shadow-sm overflow-x-auto space-y-5 rounded-none font-sans"}
-        style={isModal ? { width: '100%', maxWidth: '29.7cm' } : undefined}
+        style={isModal ? { width: '100%', maxWidth: '29.7cm', zoom: zoomLevel } : undefined}
       >
         
         {/* Document Header (Replicates Excel Title Rows) */}
@@ -643,22 +854,56 @@ export default function RekapLemburView({ employees, attendance, settings }: Rek
             background-color: white !important;
             color: black !important;
           }
-          /* Hide app sidebars and header entirely */
-          #app-sidebar, #app-header, .no-print {
+          /* Hide app elements entirely */
+          #app-sidebar, #app-header, .no-print, .modal-actions-header {
             display: none !important;
+          }
+          /* Override parent wrappers of the print preview modal to prevent print clipping and hide backgrounds */
+          div.fixed.inset-0 {
+            background: transparent !important;
+            backdrop-filter: none !important;
+            position: static !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+          div.fixed.inset-0 > div {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            max-height: none !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+          }
+          div.fixed.inset-0 > div > div.flex-1 {
+            background: transparent !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+          body * {
+            visibility: hidden;
           }
           #print-rekap-lembur, #print-rekap-lembur * {
             visibility: visible;
           }
           #print-rekap-lembur {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
             background-color: white !important;
-            color: black !important;
             border: none !important;
+            box-shadow: none !important;
             padding: 0 !important;
+            margin: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 12px !important;
+            zoom: 1 !important;
+            transform: none !important;
           }
           /* Custom table border styling for printing */
           table {
@@ -739,7 +984,16 @@ export default function RekapLemburView({ employees, attendance, settings }: Rek
             className="bg-[#1E3A8A] hover:bg-blue-800 text-white font-extrabold tracking-wider text-xs uppercase px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            <span>Cetak / Ekspor Excel-PDF</span>
+            <span>Pratinjau Cetak PDF</span>
+          </button>
+
+          <button
+            id="export-excel-btn"
+            onClick={handleExportExcel}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold tracking-wider text-xs uppercase px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Ekspor Excel</span>
           </button>
         </div>
       </div>
@@ -749,34 +1003,64 @@ export default function RekapLemburView({ employees, attendance, settings }: Rek
 
       {/* Print Preview Modal */}
       {showPrintPreview && (
-        <div className="fixed inset-0 bg-[#020617]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto no-print">
-          <div className="bg-white w-full max-w-7xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-[#020617]/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 md:p-4 overflow-y-auto">
+          <div className="bg-white w-[96vw] h-[95vh] max-w-[96vw] max-h-[95vh] rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
             
             {/* Modal Actions Header */}
-            <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0">
+            <div className="bg-white px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row gap-4 justify-between items-center shrink-0 no-print">
               <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
                 <Printer className="w-4 h-4 text-blue-600" />
                 <span>Pratinjau Cetak Perhitungan Uang Lembur PPNPN ({selectedMonthLabel} {selectedYear})</span>
               </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Kirim ke Printer</span>
-                </button>
-                <button
-                  onClick={() => setShowPrintPreview(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer"
-                >
-                  Tutup
-                </button>
+              <div className="flex items-center gap-4">
+                {/* Zoom Controls */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg p-1">
+                  <button
+                    onClick={() => setZoomLevel(prev => Math.max(0.75, prev - 0.05))}
+                    className="w-6 h-6 flex items-center justify-center bg-white hover:bg-slate-100 text-slate-700 rounded border border-slate-200 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                    title="Zoom Out"
+                  >
+                    -
+                  </button>
+                  <span className="text-xs font-mono font-bold text-slate-700 w-12 text-center select-none">
+                    {Math.round(zoomLevel * 100)}%
+                  </span>
+                  <button
+                    onClick={() => setZoomLevel(prev => Math.min(1.5, prev + 0.05))}
+                    className="w-6 h-6 flex items-center justify-center bg-white hover:bg-slate-100 text-slate-700 rounded border border-slate-200 text-xs font-bold transition-all shadow-sm cursor-pointer"
+                    title="Zoom In"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportExcel}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Ekspor Excel (.xls)</span>
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Kirim ke Printer</span>
+                  </button>
+                  <button
+                    onClick={() => setShowPrintPreview(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Document Printable View Container - Satu kesatuan utuh & background putih semua */}
-            <div className="flex-1 overflow-y-auto p-8 bg-slate-100 flex justify-center">
+            <div className="flex-1 overflow-y-auto p-8 bg-slate-100 flex justify-center items-start">
               {renderDocumentContent(true)}
             </div>
 

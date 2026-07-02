@@ -105,6 +105,7 @@ export default function VerifikasiApprovalView({
             if (index !== -1) {
               items[index].status = approve ? 'Approved' : 'Rejected';
               localStorage.setItem(key, JSON.stringify(items));
+              window.dispatchEvent(new Event('storage'));
               break;
             }
           }
@@ -123,6 +124,24 @@ export default function VerifikasiApprovalView({
     const parts = dateStr.split('-');
     if (parts.length === 3) {
       return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateStr;
+  };
+
+  // Helper to convert date to Indonesian Words Date (e.g. "22 Juni 2026")
+  const formatIndonesianDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const simpleDate = dateStr.split('T')[0];
+    const parts = simpleDate.split('-');
+    if (parts.length === 3) {
+      const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      const day = parseInt(parts[2], 10);
+      const month = months[parseInt(parts[1], 10) - 1];
+      const year = parts[0];
+      return `${day} ${month} ${year}`;
     }
     return dateStr;
   };
@@ -149,7 +168,8 @@ export default function VerifikasiApprovalView({
         reason: l.reason,
         status: l.status,
         createdAt: l.createdAt,
-        category: 'leave'
+        category: 'leave',
+        approvedDate: l.approvedDate
       });
     });
 
@@ -407,7 +427,7 @@ export default function VerifikasiApprovalView({
             <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center">
               <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
                 <Printer className="w-4 h-4 text-blue-600" />
-                <span>Cetak Dokumen Resmi Dinas ({selectedRequestForPrint.displayId})</span>
+                <span>Cetak {selectedRequestForPrint.type === 'Surat Perintah Kerja Lembur' ? 'Surat Perintah Kerja Lembur' : 'Surat Keterangan Persetujuan Cuti'} ({selectedRequestForPrint.displayId})</span>
               </span>
               <div className="flex gap-2">
                 <button
@@ -461,7 +481,7 @@ export default function VerifikasiApprovalView({
               {/* Document Title */}
               <div className="text-center mt-8 space-y-1">
                 <h2 className="font-extrabold text-base uppercase tracking-wider underline">
-                  {selectedRequestForPrint.type === 'Surat Perintah Kerja Lembur' ? 'SURAT PERINTAH KERJA LEMBUR' : 'SURAT KETERANGAN RESMI DINAS'}
+                  {selectedRequestForPrint.type === 'Surat Perintah Kerja Lembur' ? 'SURAT PERINTAH KERJA LEMBUR' : 'SURAT KETERANGAN PERSETUJUAN CUTI'}
                 </h2>
                 <p className="text-xs font-bold font-sans">
                   Nomor: ND-{selectedRequestForPrint.id.replace(/\D/g, '').slice(0, 5) || '1782'}/WPB.08/KP.02/2026
@@ -471,7 +491,7 @@ export default function VerifikasiApprovalView({
               {/* Main Contents */}
               <div className="mt-8 space-y-6 text-xs sm:text-sm">
                 <p>
-                  Yang bertanda tangan di bawah ini Kepala Kantor Wilayah Direktorat Jenderal Perbendaharaan Provinsi Riau, memberikan perintah/persetujuan dinas kepada pegawai PPNPN berikut:
+                  Yang bertanda tangan di bawah ini Kepala Subbagian Tata Usaha dan Rumah Tangga, memberikan perintah/persetujuan dinas kepada pegawai PPNPN berikut:
                 </p>
 
                 {/* Grid info of Pegawai */}
@@ -515,12 +535,12 @@ export default function VerifikasiApprovalView({
               <div className="mt-14 flex justify-end">
                 <div className="text-center space-y-16 w-64">
                   <div>
-                    <p className="text-xs">Pekanbaru, 24 Juni 2026</p>
-                    <p className="font-bold text-xs uppercase">Kepala Kantor Wilayah,</p>
+                    <p className="text-xs">Pekanbaru, {formatIndonesianDate(selectedRequestForPrint.approvedDate || selectedRequestForPrint.createdAt || new Date().toISOString().split('T')[0])}</p>
+                    <p className="font-bold text-xs uppercase">Kepala Subbagian Tata Usaha dan Rumah Tangga,</p>
                   </div>
                   <div>
-                    <p className="font-bold text-xs underline uppercase">{user.name}</p>
-                    <p className="text-[10px] font-sans text-slate-500 font-medium">NIP. 19820412 200412 1 002</p>
+                    <p className="font-bold text-xs underline uppercase">Ahmad Nauval</p>
+                    <p className="text-[10px] font-sans text-slate-500 font-medium">NIP 198210042002121003</p>
                   </div>
                 </div>
               </div>
