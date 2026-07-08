@@ -344,7 +344,8 @@ export const saveAttendance = (attendance: Attendance[]) => {
 };
 
 export const saveLeaves = (leaves: LeaveRequest[]) => {
-  localStorage.setItem(KEYS.LEAVES, JSON.stringify(leaves));
+  const filtered = leaves.filter(l => l.type !== 'Lembur');
+  localStorage.setItem(KEYS.LEAVES, JSON.stringify(filtered));
   syncWithGoogleSheets('leaves', leaves);
 };
 

@@ -372,6 +372,7 @@ export interface OvertimeAttendanceRecord {
   clockInAddress: string | null;
   clockOutAddress: string | null;
   hours: number;
+  status?: 'Pending' | 'Approved' | 'Rejected';
 }
 
 export const mapOvertimeToDb = (rec: OvertimeAttendanceRecord) => ({
@@ -387,7 +388,8 @@ export const mapOvertimeToDb = (rec: OvertimeAttendanceRecord) => ({
   clock_out_location: rec.clockOutLocation ? JSON.stringify(rec.clockOutLocation) : null,
   clock_in_address: rec.clockInAddress || null,
   clock_out_address: rec.clockOutAddress || null,
-  hours: rec.hours || 0
+  hours: rec.hours || 0,
+  status: rec.status || 'Pending'
 });
 
 export const mapOvertimeFromDb = (row: any): OvertimeAttendanceRecord => {
@@ -409,7 +411,8 @@ export const mapOvertimeFromDb = (row: any): OvertimeAttendanceRecord => {
     clockOutLocation: parseJson(row.clock_out_location),
     clockInAddress: row.clock_in_address,
     clockOutAddress: row.clock_out_address,
-    hours: row.hours || 0
+    hours: row.hours || 0,
+    status: row.status || 'Pending'
   };
 };
 
@@ -566,7 +569,8 @@ CREATE TABLE IF NOT EXISTS ppnpn_overtime_records (
   clock_out_location JSONB,
   clock_in_address TEXT,
   clock_out_address TEXT,
-  hours DOUBLE PRECISION DEFAULT 0
+  hours DOUBLE PRECISION DEFAULT 0,
+  status TEXT DEFAULT 'Pending'
 );
 
 -- Nonaktifkan Row Level Security (RLS) agar sinkronisasi client berjalan dengan lancar
