@@ -284,6 +284,18 @@ export default function VerifikasiApprovalView({
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [leaves, overtimes]);
 
+  const pendingCutiCount = useMemo(() => {
+    return unifiedRequests.filter(r => r.status === 'Pending').length;
+  }, [unifiedRequests]);
+
+  const pendingAbsenLemburCount = useMemo(() => {
+    return overtimeAttendanceRecords.filter(r => (r.status || 'Pending') === 'Pending').length;
+  }, [overtimeAttendanceRecords]);
+
+  const pendingLogbookCount = useMemo(() => {
+    return logbooks.filter(r => r.status === 'Pending').length;
+  }, [logbooks]);
+
   const handlePrintAction = (req: any) => {
     setSelectedRequestForPrint(req);
   };
@@ -300,35 +312,50 @@ export default function VerifikasiApprovalView({
         <button
           id="tab-cuti-izin-lembur"
           onClick={() => setActiveTab('cuti-izin-lembur')}
-          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${
             activeTab === 'cuti-izin-lembur'
               ? 'border-blue-600 text-blue-700'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
-          Cuti / Izin / SPKL (Lembur)
+          <span>Cuti / Izin / SPKL (Lembur)</span>
+          {pendingCutiCount > 0 && (
+            <span className="px-1.5 py-0.5 text-[9px] bg-amber-500 text-white rounded-full font-mono font-bold leading-none animate-pulse">
+              {pendingCutiCount}
+            </span>
+          )}
         </button>
         <button
           id="tab-absen-lembur"
           onClick={() => setActiveTab('absen-lembur')}
-          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${
             activeTab === 'absen-lembur'
               ? 'border-blue-600 text-blue-700'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
-          Presensi Lembur (HP)
+          <span>Presensi Lembur (HP)</span>
+          {pendingAbsenLemburCount > 0 && (
+            <span className="px-1.5 py-0.5 text-[9px] bg-rose-500 text-white rounded-full font-mono font-bold leading-none animate-pulse">
+              {pendingAbsenLemburCount}
+            </span>
+          )}
         </button>
         <button
           id="tab-logbook"
           onClick={() => setActiveTab('logbook')}
-          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 ${
+          className={`pb-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${
             activeTab === 'logbook'
               ? 'border-blue-600 text-blue-700'
               : 'border-transparent text-slate-400 hover:text-slate-600'
           }`}
         >
-          Logbook Aktivitas
+          <span>Logbook Aktivitas</span>
+          {pendingLogbookCount > 0 && (
+            <span className="px-1.5 py-0.5 text-[9px] bg-blue-500 text-white rounded-full font-mono font-bold leading-none animate-pulse">
+              {pendingLogbookCount}
+            </span>
+          )}
         </button>
       </div>
 

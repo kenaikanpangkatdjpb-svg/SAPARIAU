@@ -20,6 +20,8 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
     isAdmin ? 'all' : user.id
   );
 
+  const [filterDate, setFilterDate] = useState('');
+
   // Synchronize and set a valid karyawan ID if the selected one is invalid or not a karyawan
   useEffect(() => {
     if (isAdmin) {
@@ -48,15 +50,19 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
   }, [employees, selectedEmpId, user]);
 
   const employeeAttendance = useMemo(() => {
+    let list = attendance;
     if (selectedEmpId === 'all') {
-      return attendance
-        .filter(att => employees.some(e => e.id === att.employeeId && e.role === 'karyawan'))
-        .sort((a, b) => b.date.localeCompare(a.date));
+      list = list.filter(att => employees.some(e => e.id === att.employeeId && e.role === 'karyawan'));
+    } else {
+      list = list.filter(att => att.employeeId === selectedEmployee.id);
     }
-    return attendance
-      .filter(att => att.employeeId === selectedEmployee.id)
-      .sort((a, b) => b.date.localeCompare(a.date)); // Sort latest first
-  }, [attendance, selectedEmployee, selectedEmpId, employees]);
+
+    if (filterDate) {
+      list = list.filter(att => att.date === filterDate);
+    }
+
+    return list.sort((a, b) => b.date.localeCompare(a.date)); // Sort latest first
+  }, [attendance, selectedEmployee, selectedEmpId, employees, filterDate]);
 
   return (
     <div id="detail-absensi-view" className="space-y-6">
@@ -120,11 +126,35 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
 
         {/* History Feed (8 cols) */}
         <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col">
-          <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
-            <h4 className="font-extrabold text-slate-800 text-sm">Riwayat Presensi Harian</h4>
-            <span className="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-blue-50 text-blue-600 border border-blue-100 uppercase tracking-wider">
-              {employeeAttendance.length} Hari Kerja
-            </span>
+          <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white">
+            <div className="flex items-center gap-2">
+              <h4 className="font-extrabold text-slate-800 text-sm">Riwayat Presensi Harian</h4>
+              <span className="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-blue-50 text-blue-600 border border-blue-100 uppercase tracking-wider">
+                {employeeAttendance.length} Hari Kerja
+              </span>
+            </div>
+
+            {/* Date Filter Selection */}
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider whitespace-nowrap">Pilih Tanggal:</span>
+              <div className="relative flex items-center">
+                <input
+                  type="date"
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="text-xs font-bold pl-3 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500 font-mono"
+                />
+                {filterDate && (
+                  <button
+                    onClick={() => setFilterDate('')}
+                    className="absolute right-2 text-slate-400 hover:text-rose-500 text-sm font-extrabold bg-slate-200/60 w-5 h-5 flex items-center justify-center rounded-full hover:bg-rose-50 transition-colors"
+                    title="Hapus Filter"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">

@@ -78,12 +78,11 @@ export default function PengajuanLemburView({
 
   // Load and seed initial overtime requests matching the high-fidelity screenshot
   useEffect(() => {
-    const stored = localStorage.getItem(`overtime_requests_${user.id}`);
     let loadedRequests: OvertimeRequest[] = [];
 
-    if (stored) {
-      loadedRequests = JSON.parse(stored);
-    } else {
+    // For demo/initial seeding when leaves has no 'Lembur' requests and app is not reset:
+    const hasLemburInLeaves = leaves && leaves.some(l => l.type === 'Lembur' && l.employeeId === user.id);
+    if (!hasLemburInLeaves) {
       const isReset = localStorage.getItem('app_is_reset') === 'true';
       const initial: OvertimeRequest[] = isReset ? [] : [
         {
@@ -125,7 +124,6 @@ export default function PengajuanLemburView({
         }
       ];
       loadedRequests = initial;
-      localStorage.setItem(`overtime_requests_${user.id}`, JSON.stringify(initial));
     }
 
     // Merge with synced leaves of type 'Lembur' for this employee
@@ -163,7 +161,6 @@ export default function PengajuanLemburView({
 
   const saveRequests = (updated: OvertimeRequest[]) => {
     setRequests(updated);
-    localStorage.setItem(`overtime_requests_${user.id}`, JSON.stringify(updated));
     window.dispatchEvent(new Event('storage'));
   };
 

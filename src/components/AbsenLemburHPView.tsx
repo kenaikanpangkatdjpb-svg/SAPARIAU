@@ -54,51 +54,59 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
   const [overtimeRecords, setOvertimeRecords] = useState<OvertimeAttendanceRecord[]>([]);
 
   useEffect(() => {
-    const stored = localStorage.getItem('overtime_attendance_records');
-    if (stored) {
-      try {
-        setOvertimeRecords(JSON.parse(stored));
-      } catch (e) {
-        console.error("Failed to parse overtime records", e);
-      }
-    } else {
-      // Pre-seed realistic records for Maliq or the current user
-      const isReset = localStorage.getItem('app_is_reset') === 'true';
-      const initial: OvertimeAttendanceRecord[] = isReset ? [] : [
-        {
-          id: `ov_att_${user.id}_2026-06-25`,
-          employeeId: user.id,
-          employeeName: user.name,
-          date: '2026-06-25',
-          clockIn: '17:05',
-          clockOut: '19:35',
-          clockInPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-          clockOutPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-          clockInLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
-          clockOutLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
-          clockInAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
-          clockOutAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
-          hours: 2.5
-        },
-        {
-          id: `ov_att_${user.id}_2026-06-26`,
-          employeeId: user.id,
-          employeeName: user.name,
-          date: '2026-06-26',
-          clockIn: '17:00',
-          clockOut: '20:00',
-          clockInPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-          clockOutPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-          clockInLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
-          clockOutLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
-          clockInAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
-          clockOutAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
-          hours: 3.0
+    const loadRecords = () => {
+      const stored = localStorage.getItem('overtime_attendance_records');
+      if (stored) {
+        try {
+          setOvertimeRecords(JSON.parse(stored));
+        } catch (e) {
+          console.error("Failed to parse overtime records", e);
         }
-      ];
-      setOvertimeRecords(initial);
-      localStorage.setItem('overtime_attendance_records', JSON.stringify(initial));
-    }
+      } else {
+        // Pre-seed realistic records for Maliq or the current user
+        const isReset = localStorage.getItem('app_is_reset') === 'true';
+        const initial: OvertimeAttendanceRecord[] = isReset ? [] : [
+          {
+            id: `ov_att_${user.id}_2026-06-25`,
+            employeeId: user.id,
+            employeeName: user.name,
+            date: '2026-06-25',
+            clockIn: '17:05',
+            clockOut: '19:35',
+            clockInPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+            clockOutPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+            clockInLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
+            clockOutLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
+            clockInAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
+            clockOutAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
+            hours: 2.5,
+            status: 'Approved'
+          },
+          {
+            id: `ov_att_${user.id}_2026-06-26`,
+            employeeId: user.id,
+            employeeName: user.name,
+            date: '2026-06-26',
+            clockIn: '17:00',
+            clockOut: '20:00',
+            clockInPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+            clockOutPhoto: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+            clockInLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
+            clockOutLocation: { lat: settings.officeLat + 0.0028, lng: settings.officeLng - 0.0022 },
+            clockInAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
+            clockOutAddress: "Jalan Jenderal Sudirman No. 249, Pekanbaru 28116; TELEPON (0761) 22686; FAKSIMILE (0761) 22647; SUREL : kanwildjpbnriau@kemenkeu.go.id;",
+            hours: 3.0,
+            status: 'Approved'
+          }
+        ];
+        setOvertimeRecords(initial);
+        localStorage.setItem('overtime_attendance_records', JSON.stringify(initial));
+      }
+    };
+
+    loadRecords();
+    window.addEventListener('storage', loadRecords);
+    return () => window.removeEventListener('storage', loadRecords);
   }, [user, settings]);
 
   const saveOvertimeRecords = (updated: OvertimeAttendanceRecord[]) => {
@@ -755,6 +763,7 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
                     <th className="py-3 px-3">Out Lembur</th>
                     <th className="py-3 px-3 text-center">Durasi</th>
                     <th className="py-3 px-3 text-center">Foto Bukti</th>
+                    <th className="py-3 px-3 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -808,11 +817,22 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
                           )}
                         </div>
                       </td>
+                      <td className="py-3.5 px-3 text-center">
+                        <span className={`inline-block px-2.5 py-1 text-[9.5px] font-extrabold uppercase tracking-wider rounded border ${
+                          (rec.status || 'Pending') === 'Approved'
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                            : (rec.status || 'Pending') === 'Rejected'
+                            ? 'bg-red-50 text-red-500 border-red-100'
+                            : 'bg-amber-50 text-amber-600 border-amber-100'
+                        }`}>
+                          {rec.status === 'Approved' ? 'Disetujui' : rec.status === 'Rejected' ? 'Ditolak' : 'Pending'}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                   {overtimeRecords.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-slate-400 font-bold italic">
+                      <td colSpan={6} className="py-8 text-center text-slate-400 font-bold italic">
                         Belum ada riwayat absen lembur.
                       </td>
                     </tr>

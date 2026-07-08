@@ -14,7 +14,7 @@ export default function MonitoringHasilApprovalView({
   logbooks
 }: MonitoringHasilApprovalViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'cuti' | 'izin' | 'sakit' | 'logbook'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'cuti' | 'izin' | 'sakit' | 'logbook' | 'lembur'>('all');
 
   // Unified finalized requests list
   const historyList = useMemo(() => {
@@ -26,7 +26,7 @@ export default function MonitoringHasilApprovalView({
         id: l.id,
         employeeName: l.employeeName,
         employeeId: l.employeeId,
-        type: l.type === 'Cuti' ? 'Cuti Tahunan' : l.type === 'Sakit' ? 'Cuti Sakit' : 'Izin',
+        type: l.type === 'Cuti' ? 'Cuti Tahunan' : l.type === 'Sakit' ? 'Cuti Sakit' : l.type === 'Lembur' ? 'Lembur' : 'Izin',
         period: l.startDate === l.endDate ? l.startDate : `${l.startDate} - ${l.endDate}`,
         reason: l.reason,
         status: l.status,
@@ -60,6 +60,7 @@ export default function MonitoringHasilApprovalView({
       if (filterType === 'cuti' && item.type === 'Cuti Tahunan') return matchSearch;
       if (filterType === 'izin' && item.type === 'Izin') return matchSearch;
       if (filterType === 'sakit' && item.type === 'Cuti Sakit') return matchSearch;
+      if (filterType === 'lembur' && item.type === 'Lembur') return matchSearch;
       if (filterType === 'logbook' && item.type === 'Logbook Aktivitas') return matchSearch;
       return false;
     }).sort((a, b) => b.date.localeCompare(a.date));
@@ -129,6 +130,7 @@ export default function MonitoringHasilApprovalView({
               { value: 'cuti', label: 'Cuti Tahunan' },
               { value: 'sakit', label: 'Cuti Sakit' },
               { value: 'izin', label: 'Izin' },
+              { value: 'lembur', label: 'Lembur' },
               { value: 'logbook', label: 'Logbook' }
             ].map((tab) => (
               <button
