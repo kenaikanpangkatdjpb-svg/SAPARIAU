@@ -130,7 +130,8 @@ export default function App() {
           const dbLeaves = await getLeavesFromSupabase();
           if (dbLeaves && dbLeaves.length > 0) {
             setLeaves(dbLeaves);
-            localStorage.setItem('ppnpn_leaves', JSON.stringify(dbLeaves));
+            const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
+            localStorage.setItem('ppnpn_leaves', JSON.stringify(filteredLeaves));
           } else if (dbLeaves && dbLeaves.length === 0 && data.leaves.length > 0) {
             for (const leave of data.leaves) {
               await upsertLeaveToSupabase(leave);
@@ -206,7 +207,8 @@ export default function App() {
           const dbLeaves = await getLeavesFromSupabase();
           if (dbLeaves && dbLeaves.length > 0) {
             setLeaves(dbLeaves);
-            localStorage.setItem('ppnpn_leaves', JSON.stringify(dbLeaves));
+            const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
+            localStorage.setItem('ppnpn_leaves', JSON.stringify(filteredLeaves));
           }
 
           const dbLogs = await getLogbooksFromSupabase();
