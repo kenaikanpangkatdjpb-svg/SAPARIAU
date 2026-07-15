@@ -56,9 +56,9 @@ export default function SystemSettingsView({
   const [securityShiftPagiEnd, setSecurityShiftPagiEnd] = useState(settings.securityShiftPagiEnd || "08:00");
   const [securityShiftPagiOut, setSecurityShiftPagiOut] = useState(settings.securityShiftPagiOut || "15:00");
 
-  const [securityShiftMalamStart, setSecurityShiftMalamStart] = useState(settings.securityShiftMalamStart || "15:00");
-  const [securityShiftMalamEnd, setSecurityShiftMalamEnd] = useState(settings.securityShiftMalamEnd || "16:00");
-  const [securityShiftMalamOut, setSecurityShiftMalamOut] = useState(settings.securityShiftMalamOut || "23:00");
+  const [securityShiftMalamStart, setSecurityShiftMalamStart] = useState(settings.securityShiftMalamStart || "18:00");
+  const [securityShiftMalamEnd, setSecurityShiftMalamEnd] = useState(settings.securityShiftMalamEnd || "19:00");
+  const [securityShiftMalamOut, setSecurityShiftMalamOut] = useState(settings.securityShiftMalamOut || "06:00");
 
   // Change password state
   const [passwordForm, setPasswordForm] = useState({

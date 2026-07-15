@@ -202,27 +202,41 @@ export default function RekapLemburView({ employees, attendance, settings, leave
         }
       }
 
+      let scheduledOutStr = "17:00";
+      let defaultCheckInStr = "07:30";
+
       if (activeShift === 'pagi') {
-        const [h, m] = (settings.securityShiftPagiOut || "15:00").split(':').map(Number);
-        limitHour = h;
-        limitMinute = m;
+        scheduledOutStr = settings.securityShiftPagiOut || "15:00";
+        defaultCheckInStr = settings.securityShiftPagiStart || "07:00";
       } else if (activeShift === 'malam') {
-        const [h, m] = (settings.securityShiftMalamOut || "23:00").split(':').map(Number);
-        limitHour = h;
-        limitMinute = m;
+        scheduledOutStr = settings.securityShiftMalamOut || "06:00";
+        defaultCheckInStr = settings.securityShiftMalamStart || "18:00";
       } else {
-        const [h, m] = (settings.checkOutStart || "17:00").split(':').map(Number);
-        limitHour = h;
-        limitMinute = m;
+        scheduledOutStr = settings.checkOutStart || "17:00";
+        defaultCheckInStr = settings.checkInStart || "07:30";
       }
 
+      const checkInTimeStr = actualAtt.checkIn || defaultCheckInStr;
+      
+      const [ciH, ciM] = checkInTimeStr.split(':').map(Number);
+      const [soH, soM] = scheduledOutStr.split(':').map(Number);
       const [coH, coM] = actualAtt.checkOut.split(':').map(Number);
-      const coMin = coH * 60 + coM;
-      const limitMin = limitHour * 60 + limitMinute;
 
-      if (coMin > limitMin) {
+      const ciMin = ciH * 60 + ciM;
+      let soMin = soH * 60 + soM;
+      let coMin = coH * 60 + coM;
+
+      // Handle cross-day shift
+      if (soMin < ciMin) {
+        soMin += 24 * 60;
+      }
+      if (coMin < ciMin) {
+        coMin += 24 * 60;
+      }
+
+      if (coMin > soMin) {
         // Overtime is difference in hours, rounded to 0.5 or 1 decimal place
-        const diffHours = (coMin - limitMin) / 60;
+        const diffHours = (coMin - soMin) / 60;
         return Math.min(8, Math.round(diffHours * 10) / 10); // cap at 8 hours max standard per day
       }
     }

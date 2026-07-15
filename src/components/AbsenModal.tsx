@@ -16,7 +16,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
   const [photoBase64, setPhotoBase64] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [loadingGPS, setLoadingGPS] = useState(false);
-  const [gpsMode, setGpsMode] = useState<'simulasi_in' | 'simulasi_out' | 'riil'>('simulasi_in');
+  const [gpsMode, setGpsMode] = useState<'simulasi_in' | 'simulasi_out' | 'riil'>('riil');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>({
     lat: settings.officeLat,
     lng: settings.officeLng
@@ -105,8 +105,12 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
       if (!navigator.geolocation) {
         setGpsError("Geolocation tidak didukung oleh browser Anda.");
         setLoadingGPS(false);
-        setGpsMode('simulasi_in');
-        updateLocationByMode('simulasi_in');
+        setGpsMode('riil');
+        const fallbackLat = settings.officeLat;
+        const fallbackLng = settings.officeLng;
+        setLocation({ lat: fallbackLat, lng: fallbackLng });
+        setDistance(4);
+        setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Lokasi Default Kantor)");
         return;
       }
       navigator.geolocation.getCurrentPosition(
@@ -126,15 +130,14 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
             errMsg = "Izin lokasi ditolak. Harap izinkan lokasi di browser Anda.";
           }
           setGpsError(errMsg);
-          alert(`Gagal mengambil GPS Riil: ${errMsg}\nMengalihkan kembali ke Simulasi Dalam Kantor.`);
+          alert(`Gagal mengambil GPS Riil: ${errMsg}\nMengalihkan ke Lokasi Default Kantor.`);
           setLoadingGPS(false);
-          setGpsMode('simulasi_in');
-          // Call directly
+          setGpsMode('riil');
           const fallbackLat = settings.officeLat;
           const fallbackLng = settings.officeLng;
-          setLocation({ fallbackLat, lng: fallbackLng });
+          setLocation({ lat: fallbackLat, lng: fallbackLng });
           setDistance(4);
-          setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Simulasi Dalam Kantor)");
+          setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Lokasi Default Kantor)");
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
@@ -148,7 +151,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
 
   // Get GPS on open
   useEffect(() => {
-    updateLocationByMode('simulasi_in');
+    updateLocationByMode('riil');
   }, []);
 
   const fetchGPS = () => {
@@ -241,7 +244,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
       };
 
       const attendanceRecord: Partial<Attendance> = {
-        date: getLocalDateString(),
+        date: type === 'pulang' && todayAttendance ? todayAttendance.date : getLocalDateString(),
         ...(type === 'masuk' ? {
           checkIn: nowTime,
           checkInPhoto: photoUrl,
@@ -379,50 +382,11 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
               </div>
             </div>
 
-            {/* GPS Mode Selector for Geofence Testing */}
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Pilih Mode GPS (Simulasi / Riil)
-              </label>
-              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px]">
-                <button
-                  type="button"
-                  onClick={() => handleGpsModeChange('simulasi_in')}
-                  className={`py-1 rounded font-bold transition-all text-center ${
-                    gpsMode === 'simulasi_in' 
-                      ? 'bg-white text-emerald-600 shadow-xs' 
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  Dalam Kantor
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGpsModeChange('simulasi_out')}
-                  className={`py-1 rounded font-bold transition-all text-center ${
-                    gpsMode === 'simulasi_out' 
-                      ? 'bg-white text-rose-600 shadow-xs' 
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  Luar Kantor
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleGpsModeChange('riil')}
-                  className={`py-1 rounded font-bold transition-all text-center ${
-                    gpsMode === 'riil' 
-                      ? 'bg-white text-sky-600 shadow-xs' 
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  GPS Riil HP
-                </button>
+            {gpsError && (
+              <div className="mt-2 text-[10px] text-rose-500 font-semibold bg-rose-50 p-2 rounded-lg border border-rose-100">
+                {gpsError}
               </div>
-              {gpsError && (
-                <p className="mt-1 text-[9px] text-rose-500 font-semibold">{gpsError}</p>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Card 2: Assignment Info & Timeline & Action Button */}

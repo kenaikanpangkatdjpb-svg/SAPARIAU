@@ -36,7 +36,7 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
   const [selectedDate, setSelectedDate] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
-  const [gpsMode, setGpsMode] = useState<'simulasi_in' | 'simulasi_out' | 'riil'>('simulasi_in');
+  const [gpsMode, setGpsMode] = useState<'simulasi_in' | 'simulasi_out' | 'riil'>('riil');
   const [loadingGPS, setLoadingGPS] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number }>({ 
     lat: settings.officeLat, 
@@ -181,8 +181,12 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
       if (!navigator.geolocation) {
         setGpsError("Geolocation tidak didukung oleh browser Anda.");
         setLoadingGPS(false);
-        setGpsMode('simulasi_in');
-        updateLocationByMode('simulasi_in');
+        setGpsMode('riil');
+        const fallbackLat = settings.officeLat;
+        const fallbackLng = settings.officeLng;
+        setLocation({ lat: fallbackLat, lng: fallbackLng });
+        setDistance(3);
+        setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Lokasi Default Kantor)");
         return;
       }
       navigator.geolocation.getCurrentPosition(
@@ -202,15 +206,14 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
             errMsg = "Izin lokasi ditolak. Harap izinkan lokasi di browser Anda.";
           }
           setGpsError(errMsg);
-          alert(`Gagal mengambil GPS Riil: ${errMsg}\nMengalihkan kembali ke Simulasi Dalam Kantor.`);
+          alert(`Gagal mengambil GPS Riil: ${errMsg}\nMengalihkan ke Lokasi Default Kantor.`);
           setLoadingGPS(false);
-          setGpsMode('simulasi_in');
-          // Call directly
+          setGpsMode('riil');
           const fallbackLat = settings.officeLat;
           const fallbackLng = settings.officeLng;
           setLocation({ lat: fallbackLat, lng: fallbackLng });
           setDistance(3);
-          setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Simulasi Dalam Kantor)");
+          setAddress("Jalan Jenderal Sudirman No. 249, Pekanbaru 28116 (Lokasi Default Kantor)");
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
@@ -228,7 +231,7 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
   };
 
   useEffect(() => {
-    updateLocationByMode('simulasi_in');
+    updateLocationByMode('riil');
   }, [settings]);
 
   // Handle camera triggers
@@ -475,58 +478,19 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
                     <div className="flex items-center gap-1.5 pt-0.5">
                       <span className={`text-[10px] font-extrabold uppercase tracking-wider ${inRadius ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {inRadius 
-                          ? 'Di dalam area kantor' 
-                          : `DI LUAR RADIUS KANTOR ( +${distance} M ) (DITOLAK)`
+                           ? 'Di dalam area kantor' 
+                           : `DI LUAR RADIUS KANTOR ( +${distance} M ) (DITOLAK)`
                         }
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* GPS Mode Selector for Geofence Testing */}
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                    PILIH MODE GPS (SIMULASI / RIIL)
-                  </label>
-                  <div className="grid grid-cols-3 gap-1 bg-slate-100 p-0.5 rounded-lg text-[9px]">
-                    <button
-                      type="button"
-                      onClick={() => handleGpsModeChange('simulasi_in')}
-                      className={`py-1 rounded font-bold transition-all text-center ${
-                        gpsMode === 'simulasi_in' 
-                          ? 'bg-[#1E3A8A] text-white shadow-xs' 
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      Dalam Kantor
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleGpsModeChange('simulasi_out')}
-                      className={`py-1 rounded font-bold transition-all text-center ${
-                        gpsMode === 'simulasi_out' 
-                          ? 'bg-rose-600 text-white shadow-xs' 
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      Luar Kantor
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleGpsModeChange('riil')}
-                      className={`py-1 rounded font-bold transition-all text-center ${
-                        gpsMode === 'riil' 
-                          ? 'bg-sky-600 text-white shadow-xs' 
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      GPS Riil HP
-                    </button>
+                {gpsError && (
+                  <div className="mt-2 text-[10px] text-rose-500 font-semibold bg-rose-50 p-2 rounded-lg border border-rose-100">
+                    {gpsError}
                   </div>
-                  {gpsError && (
-                    <p className="mt-1 text-[9px] text-rose-500 font-semibold">{gpsError}</p>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* Card 2: Assignment Info & Timeline & Action Button */}
