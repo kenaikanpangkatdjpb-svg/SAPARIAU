@@ -397,8 +397,31 @@ export default function App() {
 
   const todayAttendance = useMemo(() => {
     if (!currentUser) return null;
-    return attendance.find(att => att.employeeId === currentUser.id && att.date === todayDateStr) || null;
-  }, [attendance, currentUser]);
+    const standard = attendance.find(att => att.employeeId === currentUser.id && att.date === todayDateStr) || null;
+
+    const isSecurity = !!(currentUser.position?.toLowerCase()?.includes('satpam') || 
+                       currentUser.position?.toLowerCase()?.includes('security') || 
+                       currentUser.position?.toLowerCase()?.includes('keamanan') || 
+                       currentUser.position?.toLowerCase()?.includes('penjaga'));
+
+    if (isSecurity && !standard) {
+      const now = new Date();
+      if (now.getHours() < 14) { // Allow clocking out of yesterday's night shift up to 2:00 PM
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yestYear = yesterday.getFullYear();
+        const yestMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
+        const yestDay = String(yesterday.getDate()).padStart(2, '0');
+        const yestDateStr = `${yestYear}-${yestMonth}-${yestDay}`;
+
+        const yesterdayRecord = attendance.find(att => att.employeeId === currentUser.id && att.date === yestDateStr);
+        if (yesterdayRecord && yesterdayRecord.checkIn && !yesterdayRecord.checkOut) {
+          return yesterdayRecord;
+        }
+      }
+    }
+    return standard;
+  }, [attendance, currentUser, todayDateStr]);
 
   // Auth actions
   const handleLoginSuccess = (user: Employee) => {
