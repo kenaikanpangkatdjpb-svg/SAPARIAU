@@ -71,9 +71,9 @@ const DEFAULT_SETTINGS: OfficeSettings = {
   securityShiftPagiStart: "07:00",
   securityShiftPagiEnd: "08:00",
   securityShiftPagiOut: "15:00",
-  securityShiftMalamStart: "15:00",
-  securityShiftMalamEnd: "16:00",
-  securityShiftMalamOut: "23:00"
+  securityShiftMalamStart: "18:00",
+  securityShiftMalamEnd: "19:00",
+  securityShiftMalamOut: "06:00"
 };
 
 // Seed attendance for June 2026 to make the graphs beautiful and realistic
