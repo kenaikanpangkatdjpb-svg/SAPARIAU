@@ -74,6 +74,12 @@ export default function App() {
   // Auth & View state
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [activeView, setActiveView] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1024;
+    }
+    return true;
+  });
   const [absenModalType, setAbsenModalType] = useState<'masuk' | 'pulang' | null>(null);
   const [selectedLemburMonthNum, setSelectedLemburMonthNum] = useState('06');
   const [selectedLemburYear, setSelectedLemburYear] = useState('2026');
@@ -1293,8 +1299,16 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-800 overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-50 text-slate-800 overflow-hidden font-sans relative">
       
+      {/* Mobile Backdrop Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/55 z-40 lg:hidden transition-opacity duration-300"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* 1. SIDEBAR NAVIGATION */}
       <Sidebar
         user={currentUser}
@@ -1302,6 +1316,8 @@ export default function App() {
         onViewChange={setActiveView}
         onLogout={handleLogout}
         supabaseConnected={supabaseConnected}
+        isOpen={sidebarOpen}
+        onCloseMobile={() => setSidebarOpen(false)}
       />
 
       {/* 2. MAIN APP CONTENT CONTAINER */}
@@ -1313,6 +1329,7 @@ export default function App() {
           todayAttendance={todayAttendance}
           settings={settings}
           onOpenAbsenModal={setAbsenModalType}
+          onToggleSidebar={() => setSidebarOpen(prev => !prev)}
         />
 
         {/* COMPONENT ROUTER PANEL */}
