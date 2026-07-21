@@ -41,6 +41,7 @@ interface DashboardViewProps {
   onApproveLeave: (id: string, approve: boolean) => void;
   onSubmitLogbook: (text: string) => void;
   onOpenAbsenModal?: (type: 'masuk' | 'pulang') => void;
+  todayAttendance?: Attendance | null;
 }
 
 export default function DashboardView({
@@ -53,7 +54,8 @@ export default function DashboardView({
   onNavigateToView,
   onApproveLeave,
   onSubmitLogbook,
-  onOpenAbsenModal
+  onOpenAbsenModal,
+  todayAttendance: propTodayAttendance
 }: DashboardViewProps) {
   const [quickLogText, setQuickLogText] = useState('');
   const isAdmin = user.role === 'admin';
@@ -67,7 +69,9 @@ export default function DashboardView({
   }, []);
 
   if (!isAdmin) {
-    const todayAttendance = attendance.find(att => att.employeeId === user.id && att.date === todayDateStr) || null;
+    const todayAttendance = propTodayAttendance !== undefined 
+      ? propTodayAttendance 
+      : (attendance.find(att => att.employeeId === user.id && att.date === todayDateStr) || null);
     
     return (
       <div id="employee-dashboard-view" className="space-y-6">
