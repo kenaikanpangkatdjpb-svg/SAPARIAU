@@ -22,7 +22,8 @@ import {
   ClipboardCheck,
   FileSpreadsheet,
   Image,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { Employee } from '../types';
 
@@ -32,9 +33,19 @@ interface SidebarProps {
   onViewChange: (view: string) => void;
   onLogout: () => void;
   supabaseConnected?: boolean;
+  isOpen: boolean;
+  onCloseMobile: () => void;
 }
 
-export default function Sidebar({ user, activeView, onViewChange, onLogout, supabaseConnected = false }: SidebarProps) {
+export default function Sidebar({ 
+  user, 
+  activeView, 
+  onViewChange, 
+  onLogout, 
+  supabaseConnected = false,
+  isOpen,
+  onCloseMobile
+}: SidebarProps) {
   const isAdmin = user.role === 'admin';
 
   // Specific menu items for PPNPN Employee to match the screenshot
@@ -82,7 +93,10 @@ export default function Sidebar({ user, activeView, onViewChange, onLogout, supa
       <button
         key={item.id}
         id={`sidebar-item-${item.id}`}
-        onClick={() => onViewChange(item.id)}
+        onClick={() => {
+          onViewChange(item.id);
+          onCloseMobile();
+        }}
         className={`w-full flex items-center justify-between px-4 py-2.5 my-1 text-[11px] font-semibold tracking-wide rounded-lg transition-all ${
           isActive 
             ? 'text-white bg-[#1e293b] shadow-sm' 
@@ -100,21 +114,34 @@ export default function Sidebar({ user, activeView, onViewChange, onLogout, supa
   return (
     <aside 
       id="app-sidebar"
-      className="w-64 bg-[#0B1A30] text-white flex flex-col select-none h-screen overflow-y-auto shrink-0 border-r border-slate-800"
+      className={`bg-[#0B1A30] text-white flex flex-col select-none h-screen overflow-y-auto shrink-0 border-r border-slate-800 transition-all duration-300 ease-in-out z-50
+        fixed inset-y-0 left-0 lg:static lg:translate-x-0
+        ${isOpen ? 'translate-x-0 w-64' : '-translate-x-full lg:-ml-64 w-64 lg:w-64 lg:border-r-0'}`}
     >
       {/* Profile Header Block at the TOP (as requested & per screenshot) */}
-      <div className="p-5 border-b border-slate-800 bg-[#081324] flex items-center gap-3.5">
-        <div className="w-10 h-10 rounded-full bg-[#1e293b] border border-blue-500/50 flex items-center justify-center font-bold text-white text-base shrink-0 shadow-inner">
-          {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+      <div className="p-5 border-b border-slate-800 bg-[#081324] flex items-center justify-between gap-3.5">
+        <div className="flex items-center gap-3.5 overflow-hidden">
+          <div className="w-10 h-10 rounded-full bg-[#1e293b] border border-blue-500/50 flex items-center justify-center font-bold text-white text-base shrink-0 shadow-inner">
+            {user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+          </div>
+          <div className="overflow-hidden">
+            <h3 className="text-xs font-bold text-slate-100 truncate" title={user.name}>
+              {user.name}
+            </h3>
+            <p className="text-[10px] text-blue-400 truncate mt-0.5 font-bold uppercase tracking-wider">
+              {user.role === 'admin' ? 'Administrator' : 'PPNPN'}
+            </p>
+          </div>
         </div>
-        <div className="overflow-hidden">
-          <h3 className="text-xs font-bold text-slate-100 truncate" title={user.name}>
-            {user.name}
-          </h3>
-          <p className="text-[10px] text-blue-400 truncate mt-0.5 font-bold uppercase tracking-wider">
-            {user.role === 'admin' ? 'Administrator' : 'PPNPN'}
-          </p>
-        </div>
+        
+        {/* Close Button on Mobile */}
+        <button
+          onClick={onCloseMobile}
+          className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+          title="Tutup Menu"
+        >
+          <X className="w-4.5 h-4.5" />
+        </button>
       </div>
 
       {/* Navigation Sections */}

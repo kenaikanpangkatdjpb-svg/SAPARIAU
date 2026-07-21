@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogIn, LogOut, Info } from 'lucide-react';
+import { LogIn, LogOut, Info, Menu } from 'lucide-react';
 import { Employee, Attendance, OfficeSettings } from '../types';
 
 interface HeaderProps {
@@ -7,9 +7,10 @@ interface HeaderProps {
   todayAttendance: Attendance | null;
   settings: OfficeSettings;
   onOpenAbsenModal: (type: 'masuk' | 'pulang') => void;
+  onToggleSidebar: () => void;
 }
 
-export default function Header({ user, todayAttendance, settings, onOpenAbsenModal }: HeaderProps) {
+export default function Header({ user, todayAttendance, settings, onOpenAbsenModal, onToggleSidebar }: HeaderProps) {
   const [dateStr, setDateStr] = useState('');
   const [timeStr, setTimeStr] = useState('');
 
@@ -59,28 +60,38 @@ export default function Header({ user, todayAttendance, settings, onOpenAbsenMod
   return (
     <header 
       id="app-header"
-      className="bg-white border-b border-slate-200 py-4 px-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shrink-0 shadow-sm"
+      className="bg-white border-b border-slate-200 py-4 px-5 lg:px-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shrink-0 shadow-sm"
     >
-      {/* Left side: Greeting and Status */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-xl font-bold text-slate-800 tracking-tight">
-            Selamat Datang Kembali, <span className="font-bold">{user.name}</span>
-          </h1>
-          {user.role === 'karyawan' && (
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${badgeBg}`}>
-              {statusText}
-            </span>
-          )}
-          {user.role === 'karyawan' && todayAttendance?.checkInStatus === 'Terlambat' && (
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-200">
-              Terlambat
-            </span>
-          )}
+      {/* Left side: Toggle Button and Greeting & Status */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={onToggleSidebar}
+          className="p-2 -ml-1 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-all flex items-center justify-center shrink-0"
+          title="Sembunyikan/Tampilkan Menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+
+        <div className="flex flex-col gap-1.5 min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-base sm:text-xl font-bold text-slate-800 tracking-tight truncate max-w-xs sm:max-w-md md:max-w-lg">
+              Selamat Datang Kembali, <span className="font-bold">{user.name}</span>
+            </h1>
+            {user.role === 'karyawan' && (
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${badgeBg}`}>
+                {statusText}
+              </span>
+            )}
+            {user.role === 'karyawan' && todayAttendance?.checkInStatus === 'Terlambat' && (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-200">
+                Terlambat
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 font-medium">
+            Status Keaktifan: <span className="text-slate-800 font-bold">{settings.officeName || 'Pekanbaru'} (Default Satelit)</span>
+          </p>
         </div>
-        <p className="text-[11px] text-slate-500 font-medium">
-          Status Keaktifan: <span className="text-slate-800 font-bold">{settings.officeName || 'Pekanbaru'} (Default Satelit)</span>
-        </p>
       </div>
 
       {/* Right side: Realtime Clock, Date, and Absen Actions */}
