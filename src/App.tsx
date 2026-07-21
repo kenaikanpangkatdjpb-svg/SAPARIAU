@@ -411,19 +411,16 @@ export default function App() {
                        currentUser.position?.toLowerCase()?.includes('penjaga'));
 
     if (isSecurity && !standard) {
-      const now = new Date();
-      if (now.getHours() < 14) { // Allow clocking out of yesterday's night shift up to 2:00 PM
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yestYear = yesterday.getFullYear();
-        const yestMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
-        const yestDay = String(yesterday.getDate()).padStart(2, '0');
-        const yestDateStr = `${yestYear}-${yestMonth}-${yestDay}`;
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yestYear = yesterday.getFullYear();
+      const yestMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
+      const yestDay = String(yesterday.getDate()).padStart(2, '0');
+      const yestDateStr = `${yestYear}-${yestMonth}-${yestDay}`;
 
-        const yesterdayRecord = attendance.find(att => att.employeeId === currentUser.id && att.date === yestDateStr);
-        if (yesterdayRecord && yesterdayRecord.checkIn && !yesterdayRecord.checkOut) {
-          return yesterdayRecord;
-        }
+      const yesterdayRecord = attendance.find(att => att.employeeId === currentUser.id && att.date === yestDateStr);
+      if (yesterdayRecord && yesterdayRecord.checkIn && !yesterdayRecord.checkOut) {
+        return yesterdayRecord;
       }
     }
     return standard;
@@ -838,6 +835,7 @@ export default function App() {
             onApproveLeave={handleApproveLeave}
             onSubmitLogbook={handleSubmitLogbook}
             onOpenAbsenModal={setAbsenModalType}
+            todayAttendance={todayAttendance}
           />
         );
       case 'pegawai':
