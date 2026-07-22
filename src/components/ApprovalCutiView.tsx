@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FileText, CalendarRange, CheckCircle2, XCircle, AlertCircle, Send, Printer, X, Eye } from 'lucide-react';
 import { Employee, LeaveRequest } from '../types';
 
-export const calculateWorkDays = (startDateStr: string, endDateStr: string): number => {
+export const calculateWorkDays = (startDateStr: string, endDateStr: string, userPosition?: string): number => {
   if (!startDateStr || !endDateStr) return 0;
   const startParts = startDateStr.split('-').map(Number);
   const endParts = endDateStr.split('-').map(Number);
@@ -11,6 +11,9 @@ export const calculateWorkDays = (startDateStr: string, endDateStr: string): num
   const start = new Date(Date.UTC(startParts[0], startParts[1] - 1, startParts[2]));
   const end = new Date(Date.UTC(endParts[0], endParts[1] - 1, endParts[2]));
   if (end < start) return 0;
+
+  const posLower = (userPosition || '').toLowerCase();
+  const isSecurity = posLower.includes('satpam') || posLower.includes('security') || posLower.includes('penjaga');
 
   const holidays = [
     '2026-01-01', // Tahun Baru
@@ -30,8 +33,10 @@ export const calculateWorkDays = (startDateStr: string, endDateStr: string): num
   ];
 
   let count = 0;
+  let totalCalendarDays = 0;
   const current = new Date(start);
   while (current <= end) {
+    totalCalendarDays++;
     const dayOfWeek = current.getUTCDay();
     const y = current.getUTCFullYear();
     const m = String(current.getUTCMonth() + 1).padStart(2, '0');
@@ -41,12 +46,21 @@ export const calculateWorkDays = (startDateStr: string, endDateStr: string): num
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const isHoliday = holidays.includes(dateStr);
 
-    if (!isWeekend && !isHoliday) {
+    if (isSecurity) {
+      // Petugas Security / Satpam bekerja 7 hari seminggu
       count++;
+    } else {
+      // PPNPN diluar Security: Hari kerja Senin s.d. Jumat
+      if (!isWeekend && !isHoliday) {
+        count++;
+      }
     }
     current.setUTCDate(current.getUTCDate() + 1);
   }
-  return count || 1; // Default to at least 1 day
+
+  // Jika range yang dipilih hanya jatuh di akhir pekan untuk non-security (misal 25/07/2026 - 26/07/2026 = 2 hari),
+  // gunakan totalCalendarDays agar otomatis terisi 2.
+  return count || totalCalendarDays || 1;
 };
 
 interface ApprovalCutiViewProps {
@@ -142,9 +156,18 @@ export default function ApprovalCutiView({
 
   // Calculate workDays automatically when startDate or endDate changes
   useEffect(() => {
-    if (formData.startDate && formData.endDate) {
-      const activeWorkDays = calculateWorkDays(formData.startDate, formData.endDate);
-      setFormData(prev => ({ ...prev, workDays: activeWorkDays }));
+    if (formData.startDate) {
+      let targetEndDate = formData.endDate;
+      if (!targetEndDate || targetEndDate < formData.startDate) {
+        targetEndDate = formData.startDate;
+      }
+      const activeWorkDays = calculateWorkDays(formData.startDate, targetEndDate, user.position);
+      setFormData(prev => {
+        if (prev.endDate !== targetEndDate || prev.workDays !== activeWorkDays) {
+          return { ...prev, endDate: targetEndDate, workDays: activeWorkDays };
+        }
+        return prev;
+      });
     }
   }, [formData.startDate, formData.endDate]);
 
@@ -294,12 +317,13 @@ export default function ApprovalCutiView({
             </div>
 
             {viewType === 'cuti' && (
-              <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-xl flex items-center justify-between text-xs">
+              <div id="card-sisa-kuota-cuti-ppnpn" className="p-4 bg-gradient-to-r from-[#0B1E43] to-slate-900 text-white border border-blue-900/60 rounded-xl flex items-center justify-between text-xs shadow-sm">
                 <div>
-                  <p className="text-slate-500 font-semibold">Sisa Kuota Cuti Anda</p>
-                  <p className="text-2xl font-black text-[#0B1E43] mt-0.5">{employeeCutiQuota} Hari</p>
+                  <p className="text-blue-200 font-bold uppercase tracking-wider text-[10px]">Sisa Kuota Cuti PPNPN</p>
+                  <p className="text-2xl font-black text-white mt-0.5">{employeeCutiQuota} Hari</p>
+                  <p className="text-[10px] text-blue-300 mt-0.5 font-medium">Telah tersimpan & direkam oleh Admin</p>
                 </div>
-                <span className="text-[10px] font-bold uppercase text-blue-700 tracking-wider bg-blue-50 px-2.5 py-1 border border-blue-100 rounded-lg">
+                <span className="text-[10px] font-bold uppercase text-amber-300 tracking-wider bg-white/10 px-3 py-1.5 border border-white/10 rounded-lg">
                   Tahun 2026
                 </span>
               </div>
@@ -317,7 +341,7 @@ export default function ApprovalCutiView({
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData({...formData, type: e.target.value as 'Cuti' | 'Izin' | 'Sakit'})}
-                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
+                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
                 >
                   <option value="Cuti">Cuti Tahunan</option>
                   <option value="Sakit">Cuti Sakit</option>
@@ -327,37 +351,60 @@ export default function ApprovalCutiView({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Mulai</label>
+                  <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Mulai Tanggal</label>
                   <input
                     type="date"
                     required
                     value={formData.startDate}
                     onChange={(e) => setFormData({...formData, startDate: e.target.value})}
-                    className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
+                    className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Selesai</label>
+                  <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Selesai Tanggal</label>
                   <input
                     type="date"
                     required
                     value={formData.endDate}
                     onChange={(e) => setFormData({...formData, endDate: e.target.value})}
-                    className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
+                    className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Jumlah Cuti</label>
+                <div className="flex justify-between items-center">
+                  <label className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider">Jumlah Cuti (Otomatis)</label>
+                  {formData.startDate && (
+                    <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-100">
+                      Otomatis: {formData.workDays} Hari
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   min={1}
                   required
                   value={formData.workDays}
-                  onChange={(e) => setFormData({...formData, workDays: parseInt(e.target.value) || 1})}
-                  className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500"
+                  onChange={(e) => setFormData({...formData, workDays: Math.max(1, parseInt(e.target.value) || 1)})}
+                  className="w-full text-xs px-3.5 py-2.5 bg-slate-100/90 border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-blue-500"
                 />
+                {formData.startDate && (
+                  <div className="p-3 bg-blue-50/80 border border-blue-100 rounded-xl text-[11px] space-y-1 text-slate-700 mt-2">
+                    <p className="flex items-center justify-between font-bold">
+                      <span>Jumlah Cuti Diajukan:</span>
+                      <span className="text-blue-900 text-xs font-black">{formData.workDays} Hari Kerja</span>
+                    </p>
+                    {formData.type === 'Cuti' && (
+                      <p className="flex items-center justify-between text-[10px] pt-1 border-t border-blue-200/50">
+                        <span>Estimasi sisa kuota setelah cuti:</span>
+                        <span className={`font-bold ${employeeCutiQuota - formData.workDays < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                          {employeeCutiQuota - formData.workDays} Hari
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -812,7 +859,8 @@ export default function ApprovalCutiView({
                     onChange={(e) => {
                       const newStart = e.target.value;
                       const newEnd = editingLeave.endDate || newStart;
-                      const wDays = calculateWorkDays(newStart, newEnd);
+                      const targetPos = employees.find(emp => emp.id === editingLeave.employeeId)?.position || user.position;
+                      const wDays = calculateWorkDays(newStart, newEnd, targetPos);
                       setEditingLeave({
                         ...editingLeave,
                         startDate: newStart,
@@ -834,7 +882,8 @@ export default function ApprovalCutiView({
                     onChange={(e) => {
                       const newEnd = e.target.value;
                       const newStart = editingLeave.startDate || newEnd;
-                      const wDays = calculateWorkDays(newStart, newEnd);
+                      const targetPos = employees.find(emp => emp.id === editingLeave.employeeId)?.position || user.position;
+                      const wDays = calculateWorkDays(newStart, newEnd, targetPos);
                       setEditingLeave({
                         ...editingLeave,
                         endDate: newEnd,
