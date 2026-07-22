@@ -240,6 +240,16 @@ export default function App() {
     };
   }, []);
 
+  // Synchronize currentUser with the latest employee record from employees list
+  useEffect(() => {
+    if (currentUser) {
+      const freshEmp = employees.find(e => e.id === currentUser.id);
+      if (freshEmp && (freshEmp.cutiQuota !== currentUser.cutiQuota || freshEmp.name !== currentUser.name || freshEmp.position !== currentUser.position)) {
+        setCurrentUser(prev => prev ? { ...prev, cutiQuota: freshEmp.cutiQuota, name: freshEmp.name, position: freshEmp.position } : null);
+      }
+    }
+  }, [employees]);
+
   // One-time auto-reset of ZSA ZSA ANINDYA PUTERI tanggal 1 Juli 2026 as explicitly requested
   useEffect(() => {
     const performReset = async () => {
@@ -1016,6 +1026,7 @@ export default function App() {
                         const updated = employees.map(emp => emp.role === 'karyawan' ? { ...emp, cutiQuota: 12 } : emp);
                         setEmployees(updated);
                         saveEmployees(updated);
+                        updated.forEach(empItem => upsertEmployeeToSupabase(empItem));
                         alert("Kuota cuti semua karyawan berhasil di-reset menjadi 12 Hari!");
                       }
                     }}
@@ -1093,6 +1104,8 @@ export default function App() {
                                   const updated = employees.map(e => e.id === emp.id ? { ...e, cutiQuota: targetQuota } : e);
                                   setEmployees(updated);
                                   saveEmployees(updated);
+                                  const targetEmp = updated.find(e => e.id === emp.id);
+                                  if (targetEmp) upsertEmployeeToSupabase(targetEmp);
                                   
                                   // Show temporary success feedback
                                   setQuotaSuccessMap(prev => ({
