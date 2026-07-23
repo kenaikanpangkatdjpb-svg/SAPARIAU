@@ -890,13 +890,21 @@ export default function ApprovalCutiView({
               </button>
 
               {/* Download PDF Button */}
-              <button
-                onClick={() => {
-                  const element = document.getElementById('print-letter-target');
-                  if (!element) return;
-                  const filename = `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;    
-                className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
-              >
+              {/* Download PDF Button */}
+<button
+  onClick={() => {
+    const element = document.getElementById('print-letter-target');
+    if (!element) return;
+
+    const filename = `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;
+
+    triggerPrint(element.id, filename);
+  }}
+  className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
+>
+  <FileText className="w-4 h-4 text-amber-400" />
+  <span>Unduh Dokumen Resmi (PDF)</span>
+</button>
                 <FileText className="w-4 h-4 text-amber-400" />
                 <span>Unduh Dokumen Resmi (PDF)</span>
               </button>
