@@ -38,3 +38,51 @@ input, select, textarea {
 ::-webkit-scrollbar-thumb:hover {
   background: #D4AF37;
 }
+
+/* Print layout optimizations */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Reset layout containers so modal backdrops don't constrain or offset printing */
+  #root,
+  #root > div,
+  main,
+  div.fixed,
+  div.fixed.inset-0,
+  div.fixed.inset-0 > div,
+  div.fixed.inset-0 > div > div {
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important;
+  }
+
+  /* Hide navigation, action buttons, headers, modal close buttons, and explicit no-print elements */
+  nav, header, aside, .no-print, button, .border-t.flex.justify-end, svg.lucide-x {
+    display: none !important;
+  }
+}

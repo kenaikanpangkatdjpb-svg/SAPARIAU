@@ -74,6 +74,12 @@ export default function App() {
   // Auth & View state
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [activeView, setActiveView] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1024;
+    }
+    return true;
+  });
   const [absenModalType, setAbsenModalType] = useState<'masuk' | 'pulang' | null>(null);
   const [selectedLemburMonthNum, setSelectedLemburMonthNum] = useState('06');
   const [selectedLemburYear, setSelectedLemburYear] = useState('2026');
@@ -130,7 +136,8 @@ export default function App() {
           const dbLeaves = await getLeavesFromSupabase();
           if (dbLeaves && dbLeaves.length > 0) {
             setLeaves(dbLeaves);
-            localStorage.setItem('ppnpn_leaves', JSON.stringify(dbLeaves));
+            const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
+            localStorage.setItem('ppnpn_leaves', JSON.stringify(filteredLeaves));
           } else if (dbLeaves && dbLeaves.length === 0 && data.leaves.length > 0) {
             for (const leave of data.leaves) {
               await upsertLeaveToSupabase(leave);
@@ -206,7 +213,8 @@ export default function App() {
           const dbLeaves = await getLeavesFromSupabase();
           if (dbLeaves && dbLeaves.length > 0) {
             setLeaves(dbLeaves);
-            localStorage.setItem('ppnpn_leaves', JSON.stringify(dbLeaves));
+            const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
+            localStorage.setItem('ppnpn_leaves', JSON.stringify(filteredLeaves));
           }
 
           const dbLogs = await getLogbooksFromSupabase();
@@ -231,6 +239,16 @@ export default function App() {
       clearInterval(interval);
     };
   }, []);
+
+  // Synchronize currentUser with the latest employee record from employees list
+  useEffect(() => {
+    if (currentUser) {
+      const freshEmp = employees.find(e => e.id === currentUser.id);
+      if (freshEmp && (freshEmp.cutiQuota !== currentUser.cutiQuota || freshEmp.name !== currentUser.name || freshEmp.position !== currentUser.position)) {
+        setCurrentUser(prev => prev ? { ...prev, cutiQuota: freshEmp.cutiQuota, name: freshEmp.name, position: freshEmp.position } : null);
+      }
+    }
+  }, [employees]);
 
   // One-time auto-reset of ZSA ZSA ANINDYA PUTERI tanggal 1 Juli 2026 as explicitly requested
   useEffect(() => {
@@ -395,8 +413,28 @@ export default function App() {
 
   const todayAttendance = useMemo(() => {
     if (!currentUser) return null;
-    return attendance.find(att => att.employeeId === currentUser.id && att.date === todayDateStr) || null;
-  }, [attendance, currentUser]);
+    const standard = attendance.find(att => att.employeeId === currentUser.id && att.date === todayDateStr) || null;
+
+    const isSecurity = !!(currentUser.position?.toLowerCase()?.includes('satpam') || 
+                       currentUser.position?.toLowerCase()?.includes('security') || 
+                       currentUser.position?.toLowerCase()?.includes('keamanan') || 
+                       currentUser.position?.toLowerCase()?.includes('penjaga'));
+
+    if (isSecurity && !standard) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yestYear = yesterday.getFullYear();
+      const yestMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
+      const yestDay = String(yesterday.getDate()).padStart(2, '0');
+      const yestDateStr = `${yestYear}-${yestMonth}-${yestDay}`;
+
+      const yesterdayRecord = attendance.find(att => att.employeeId === currentUser.id && att.date === yestDateStr);
+      if (yesterdayRecord && yesterdayRecord.checkIn && !yesterdayRecord.checkOut) {
+        return yesterdayRecord;
+      }
+    }
+    return standard;
+  }, [attendance, currentUser, todayDateStr]);
 
   // Auth actions
   const handleLoginSuccess = (user: Employee) => {
@@ -807,6 +845,7 @@ export default function App() {
             onApproveLeave={handleApproveLeave}
             onSubmitLogbook={handleSubmitLogbook}
             onOpenAbsenModal={setAbsenModalType}
+            todayAttendance={todayAttendance}
           />
         );
       case 'pegawai':
@@ -987,6 +1026,7 @@ export default function App() {
                         const updated = employees.map(emp => emp.role === 'karyawan' ? { ...emp, cutiQuota: 12 } : emp);
                         setEmployees(updated);
                         saveEmployees(updated);
+                        updated.forEach(empItem => upsertEmployeeToSupabase(empItem));
                         alert("Kuota cuti semua karyawan berhasil di-reset menjadi 12 Hari!");
                       }
                     }}
@@ -1064,6 +1104,8 @@ export default function App() {
                                   const updated = employees.map(e => e.id === emp.id ? { ...e, cutiQuota: targetQuota } : e);
                                   setEmployees(updated);
                                   saveEmployees(updated);
+                                  const targetEmp = updated.find(e => e.id === emp.id);
+                                  if (targetEmp) upsertEmployeeToSupabase(targetEmp);
                                   
                                   // Show temporary success feedback
                                   setQuotaSuccessMap(prev => ({
@@ -1268,8 +1310,16 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-800 overflow-hidden font-sans">
+    <div className="flex h-screen bg-slate-50 text-slate-800 overflow-hidden font-sans relative">
       
+      {/* Mobile Backdrop Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/55 z-40 lg:hidden transition-opacity duration-300"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* 1. SIDEBAR NAVIGATION */}
       <Sidebar
         user={currentUser}
@@ -1277,6 +1327,8 @@ export default function App() {
         onViewChange={setActiveView}
         onLogout={handleLogout}
         supabaseConnected={supabaseConnected}
+        isOpen={sidebarOpen}
+        onCloseMobile={() => setSidebarOpen(false)}
       />
 
       {/* 2. MAIN APP CONTENT CONTAINER */}
@@ -1288,6 +1340,7 @@ export default function App() {
           todayAttendance={todayAttendance}
           settings={settings}
           onOpenAbsenModal={setAbsenModalType}
+          onToggleSidebar={() => setSidebarOpen(prev => !prev)}
         />
 
         {/* COMPONENT ROUTER PANEL */}
