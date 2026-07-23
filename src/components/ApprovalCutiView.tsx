@@ -2,36 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FileText, CalendarRange, CheckCircle2, XCircle, AlertCircle, Send, Printer, X, Eye } from 'lucide-react';
 import { Employee, LeaveRequest } from '../types';
 
-// ===== GANTI MULAI DARI SINI =====
-export const triggerPrint = (
-  elementId: string,
-  documentTitle: string = "Dokumen"
-) => {
-  const element = document.getElementById(elementId);
-
-  if (!element) {
-    console.warn("Print target element not found:", elementId);
-    return;
-  }
-
-  const originalTitle = document.title;
-  document.title = documentTitle;
-
-  setTimeout(() => {
-    window.print();
-
-    setTimeout(() => {
-      document.title = originalTitle;
-    }, 500);
-  }, 100);
-};
-// ===== SAMPAI SINI =====
-
-
-// BIARKAN DULU, JANGAN DIUBAH
-export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
-   ...
-}
+export const triggerPrint = async (elementId: string, documentTitle: string = 'Dokumen') => {
   const element = document.getElementById(elementId);
   
   if (!element) {
@@ -340,7 +311,16 @@ export default function ApprovalCutiView({
   const [editingLeave, setEditingLeave] = useState<LeaveRequest | null>(null);
 
   // Pre-load html2pdf library for seamless PDF generation
-  
+  useEffect(() => {
+    // @ts-ignore
+    if (!window.html2pdf) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
   const employeeCutiQuota = user.cutiQuota;
 
   // Filter lists: admins see all, employees see only their own
