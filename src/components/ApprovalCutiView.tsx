@@ -17,8 +17,9 @@ export const triggerPrint = async (elementId: string, documentTitle: string = 'D
   }
 
   // @ts-ignore
-  const window.print(); = window.window.print();;
-  if (window.print();) {
+const browserPrint = window.print;
+
+if (browserPrint) {
     try {
       const opt = {
         margin: [8, 8, 8, 8],
