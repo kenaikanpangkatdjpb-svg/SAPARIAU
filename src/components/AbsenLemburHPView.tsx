@@ -304,22 +304,28 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
             };
           } else {
             // Calculate hours when clocking out
-            let hrs = 0;
+            let rawHrs = 0;
             if (current.clockIn) {
               const [inH, inM] = current.clockIn.split(':').map(Number);
               const [outH, outM] = nowTime.split(':').map(Number);
               const diffMin = (outH * 60 + outM) - (inH * 60 + inM);
               if (diffMin > 0) {
-                hrs = Math.round((diffMin / 60) * 10) / 10;
+                rawHrs = diffMin / 60;
               }
+            } else {
+              rawHrs = 2; // fallback if clock in was missed
             }
+
+            // Aturan PPNPN: Minimal 2 jam, penambahan dihitung setiap 1 jam penuh (Math.floor)
+            const validHrs = rawHrs >= 2 ? Math.floor(rawHrs) : 0;
+
             updatedRecords[existingIdx] = {
               ...current,
               clockOut: nowTime,
               clockOutPhoto: photoBase64,
               clockOutLocation: location,
               clockOutAddress: address,
-              hours: hrs > 0 ? hrs : 2, // default to 2 hours if clock in wasn't set or calculation is negative
+              hours: validHrs,
               status: 'Pending'
             };
           }
@@ -346,7 +352,17 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
 
         saveOvertimeRecords(updatedRecords);
         setPhotoBase64(null);
-        alert(`Absen Lembur ${absenType === 'masuk' ? 'Clock In' : 'Clock Out'} Berhasil Terkirim!\nData otomatis terekam di riwayat absen lembur Anda dan Rekap Lembur admin.`);
+
+        if (absenType === 'pulang') {
+          const rec = updatedRecords.find(r => r.employeeId === user.id && r.date === selectedDate);
+          if (rec && rec.hours === 0) {
+            alert(`Absen Lembur Clock Out Berhasil Terkirim!\n\nPerhatian: Durasi lembur Anda kurang dari 2 jam. Sesuai ketentuan, lembur PPNPN baru dapat dihitung apabila melaksanakan lembur minimal 2 jam (saat ini tercatat 0 jam).`);
+          } else {
+            alert(`Absen Lembur Clock Out Berhasil Terkirim! (${rec?.hours || 0} Jam)\nData otomatis terekam di riwayat absen lembur Anda dan Rekap Lembur admin.`);
+          }
+        } else {
+          alert(`Absen Lembur Clock In Berhasil Terkirim!\nData otomatis terekam di riwayat absen lembur Anda dan Rekap Lembur admin.`);
+        }
       } catch (err) {
         console.error(err);
         alert("Terjadi kesalahan saat memproses absen lembur: " + (err instanceof Error ? err.message : String(err)));

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Grid3X3, Printer, FileDown, FileSpreadsheet, CheckCircle, Clock, AlertCircle, Calendar } from 'lucide-react';
 import { Employee, Attendance, LeaveRequest } from '../types';
+import { triggerPdfDownload, triggerPrint } from './ApprovalCutiView';
 
 interface RekapMatrixViewProps {
   employees: Employee[];
@@ -695,8 +696,8 @@ export default function RekapMatrixView({ employees, attendance, leaves }: Rekap
                 
                 <div className="flex gap-2">
                   <button
-                    onClick={() => window.print()}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => triggerPrint('print-area', `Rekap_Presensi_${selectedMonthLabel}_${selectedYear}`)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                   >
                     <Printer className="w-4 h-4" />
                     <span>Kirim ke Printer</span>

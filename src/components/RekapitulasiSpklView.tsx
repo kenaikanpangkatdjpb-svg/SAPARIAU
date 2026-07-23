@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Printer, Search, Calendar, User, Clock, FileText, Check, X, Info } from 'lucide-react';
 import { Employee, Attendance, LeaveRequest, OfficeSettings } from '../types';
+import { triggerPdfDownload, triggerPrint } from './ApprovalCutiView';
 
 interface OvertimeRequest {
   id: string;
@@ -470,19 +471,19 @@ export default function RekapitulasiSpklView({
 
       {/* High-Fidelity Printable Collective SPKL Document Overlay Modal */}
       {showPrintPreview && (
-        <div className="fixed inset-0 bg-[#020617]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto no-print">
+        <div className="fixed inset-0 bg-[#020617]/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8 flex flex-col max-h-[90vh]">
             
             {/* Modal Actions Header */}
-            <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0">
+            <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shrink-0 no-print">
               <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
                 <Printer className="w-4 h-4 text-blue-600" />
                 <span>Pratinjau Cetak Surat Perintah Kerja Lembur Kolektif ({selectedIds.length} Pengajuan)</span>
               </span>
               <div className="flex gap-2">
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                  onClick={() => triggerPrint('print-spkl-collective', `SPKL_Kolektif_${selectedIds.length}_Pengajuan`)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                 >
                   <Printer className="w-4 h-4" />
                   <span>Kirim ke Printer</span>

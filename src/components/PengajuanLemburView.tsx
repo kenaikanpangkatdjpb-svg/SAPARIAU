@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Clock, Plus, CheckCircle, AlertCircle, Trash2, Printer, X, FileText, Send } from 'lucide-react';
 import { Employee, LeaveRequest, OfficeSettings } from '../types';
+import { triggerPdfDownload, triggerPrint } from './ApprovalCutiView';
 
 interface OvertimeRequest {
   id: string;
@@ -170,11 +171,18 @@ export default function PengajuanLemburView({
       alert("Silakan pilih Tanggal Lembur!");
       return;
     }
-    const parsedHours = parseFloat(formData.hours);
-    if (isNaN(parsedHours) || parsedHours <= 0) {
+    const rawParsed = parseFloat(formData.hours);
+    if (isNaN(rawParsed) || rawParsed <= 0) {
       alert("Silakan isi Jumlah Jam Lembur yang valid!");
       return;
     }
+    if (rawParsed < 2) {
+      alert("Lembur PPNPN baru bisa dihitung setelah melaksanakan lembur minimal 2 jam!");
+      return;
+    }
+
+    const parsedHours = Math.floor(rawParsed);
+
     if (!formData.reason.trim()) {
       alert("Silakan isi Rencana Deskripsi Kegiatan Lembur!");
       return;
@@ -420,15 +428,20 @@ export default function PengajuanLemburView({
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Jumlah Jam Lembur</label>
+                <label className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Jumlah Jam Lembur (Min. 2 Jam, Kelipatan 1 Jam)</label>
                 <input
-                  type="text"
+                  type="number"
+                  min="2"
+                  step="1"
                   required
-                  placeholder="Contoh: 2"
+                  placeholder="Minimal 2 (Contoh: 2, 3, 4)"
                   value={formData.hours}
                   onChange={e => setFormData({ ...formData, hours: e.target.value })}
                   className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 font-bold focus:outline-none focus:border-blue-500"
                 />
+                <p className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                  * Ketentuan: Lembur PPNPN minimal 2 jam, dan penambahan lembur dihitung setiap 1 jam penuh.
+                </p>
               </div>
             </div>
 
@@ -548,10 +561,10 @@ export default function PengajuanLemburView({
 
       {/* High-Fidelity Printable SPKL Document Overlay Modal */}
       {selectedPrintOvertime && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col h-[90vh]">
             {/* Modal Header */}
-            <div className="px-6 py-4 bg-[#0B1E43] text-white flex justify-between items-center shrink-0">
+            <div className="px-6 py-4 bg-[#0B1E43] text-white flex justify-between items-center shrink-0 no-print">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-300" />
                 <span className="font-bold text-sm tracking-tight">Dokumen SPKL Resmi (Siap Cetak / PDF)</span>
@@ -695,7 +708,7 @@ export default function PengajuanLemburView({
             </div>
 
             {/* Action Bar (Print & Close) */}
-            <div className="px-6 py-4 bg-white border-t border-slate-200 flex justify-end gap-3 shrink-0">
+            <div className="px-6 py-4 bg-white border-t border-slate-200 flex justify-end gap-3 shrink-0 no-print">
               <button
                 onClick={() => setSelectedPrintOvertime(null)}
                 className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
@@ -703,13 +716,32 @@ export default function PengajuanLemburView({
                 Kembali
               </button>
               <button
-                onClick={() => {
-                  window.print();
-                }}
-                className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
+                onClick={() => triggerPrint('print-spkl-target', `SPKL_${(selectedPrintOvertime.employeeName || 'Pegawai').replace(/\s+/g, '_')}`)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer active:scale-95"
               >
-                <Printer className="w-4 h-4" />
-                <span>Cetak Dokumen Resmi (PDF)</span>
+                <Printer className="w-4 h-4 text-slate-600" />
+                <span>Kirim ke Printer</span>
+              </button>
+              <button
+                onClick={() => {
+                  const element = document.getElementById('print-spkl-target');
+                  if (element) {
+                    const filename = `SPKL_${(selectedPrintOvertime.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;
+                    // @ts-ignore
+                    if (!window.html2pdf) {
+                      const script = document.createElement('script');
+                      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                      script.onload = () => triggerPdfDownload(element, filename);
+                      document.body.appendChild(script);
+                    } else {
+                      triggerPdfDownload(element, filename);
+                    }
+                  }
+                }}
+                className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
+              >
+                <FileText className="w-4 h-4" />
+                <span>Unduh PDF</span>
               </button>
             </div>
           </div>

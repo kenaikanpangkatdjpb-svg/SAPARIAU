@@ -2,6 +2,216 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FileText, CalendarRange, CheckCircle2, XCircle, AlertCircle, Send, Printer, X, Eye } from 'lucide-react';
 import { Employee, LeaveRequest } from '../types';
 
+export const triggerPrint = async (elementId: string, documentTitle: string = 'Dokumen') => {
+  const element = document.getElementById(elementId);
+  
+  if (!element) {
+    console.warn("Print target element not found:", elementId);
+    try { window.print(); } catch (e) { console.warn(e); }
+    return;
+  }
+
+  const originalTitle = document.title;
+  if (documentTitle) {
+    document.title = documentTitle;
+  }
+
+  // @ts-ignore
+  const html2pdf = window.html2pdf;
+  if (html2pdf) {
+    try {
+      const opt = {
+        margin: [8, 8, 8, 8],
+        filename: `${documentTitle}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          letterRendering: true,
+          scrollX: 0,
+          scrollY: 0,
+          onclone: (clonedDoc: Document) => {
+            // Sanitize styles to prevent blank renders in html2canvas
+            const styleEls = clonedDoc.querySelectorAll('style');
+            styleEls.forEach((style) => {
+              if (style.textContent) {
+                style.textContent = style.textContent
+                  .replace(/oklch\([^)]+\)/gi, '#1e293b')
+                  .replace(/oklab\([^)]+\)/gi, '#1e293b')
+                  .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
+                  .replace(/lab\([^)]+\)/gi, '#334155');
+              }
+            });
+
+            const allElements = clonedDoc.querySelectorAll('*');
+            allElements.forEach((el) => {
+              const styleAttr = el.getAttribute('style');
+              if (styleAttr && /oklch|oklab|color-mix|lab/i.test(styleAttr)) {
+                el.setAttribute('style', styleAttr
+                  .replace(/oklch\([^)]+\)/gi, '#1e293b')
+                  .replace(/oklab\([^)]+\)/gi, '#1e293b')
+                  .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
+                  .replace(/lab\([^)]+\)/gi, '#334155')
+                );
+              }
+            });
+
+            const clonedTarget = (clonedDoc.getElementById(elementId) || clonedDoc.querySelector('#' + elementId)) as HTMLElement | null;
+            if (clonedTarget) {
+              clonedTarget.style.boxShadow = 'none';
+              clonedTarget.style.borderRadius = '0px';
+              clonedTarget.style.transform = 'none';
+              clonedTarget.style.maxWidth = '100%';
+              clonedTarget.style.width = '100%';
+              clonedTarget.style.margin = '0 auto';
+              clonedTarget.style.padding = '16px 20px';
+
+              let parent = clonedTarget.parentElement;
+              while (parent && parent !== clonedDoc.body) {
+                parent.style.overflow = 'visible';
+                parent.style.maxHeight = 'none';
+                parent.style.height = 'auto';
+                parent.style.transform = 'none';
+                parent.style.padding = '0';
+                parent.style.margin = '0';
+                parent = parent.parentElement;
+              }
+            }
+          }
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+
+      // Try printing via hidden iframe using the generated PDF blob
+      const printFrame = document.createElement('iframe');
+      printFrame.style.position = 'fixed';
+      printFrame.style.right = '0';
+      printFrame.style.bottom = '0';
+      printFrame.style.width = '0px';
+      printFrame.style.height = '0px';
+      printFrame.style.border = '0';
+      printFrame.src = blobUrl;
+      document.body.appendChild(printFrame);
+
+      printFrame.onload = () => {
+        setTimeout(() => {
+          try {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+          } catch (e) {
+            console.warn("Iframe print fallback:", e);
+            window.open(blobUrl, '_blank');
+          }
+        }, 300);
+      };
+
+      setTimeout(() => {
+        document.title = originalTitle;
+      }, 1000);
+      return;
+    } catch (err) {
+      console.warn("html2pdf print conversion error, falling back to window.print():", err);
+    }
+  }
+
+  // Fallback direct window.print()
+  try {
+    window.print();
+  } catch (e) {
+    console.warn("Direct window.print failed:", e);
+  } finally {
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
+  }
+};
+
+export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
+  // @ts-ignore
+  const html2pdf = window.html2pdf;
+  if (!html2pdf || !element) return;
+
+  const targetId = element.id || 'printable-area';
+
+  const opt = {
+    margin: [8, 8, 8, 8], // 8mm page margins
+    filename: filename,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      letterRendering: true,
+      scrollX: 0,
+      scrollY: 0,
+      onclone: (clonedDoc: Document) => {
+        // 1. Sanitize all <style> tags to eliminate oklch/oklab/color-mix color parser crashes in html2canvas
+        const styleEls = clonedDoc.querySelectorAll('style');
+        styleEls.forEach((style) => {
+          if (style.textContent) {
+            style.textContent = style.textContent
+              .replace(/oklch\([^)]+\)/gi, '#1e293b')
+              .replace(/oklab\([^)]+\)/gi, '#1e293b')
+              .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
+              .replace(/lab\([^)]+\)/gi, '#334155');
+          }
+        });
+
+        // 2. Sanitize inline style attributes on cloned elements
+        const allElements = clonedDoc.querySelectorAll('*');
+        allElements.forEach((el) => {
+          const styleAttr = el.getAttribute('style');
+          if (styleAttr && /oklch|oklab|color-mix|lab/i.test(styleAttr)) {
+            el.setAttribute('style', styleAttr
+              .replace(/oklch\([^)]+\)/gi, '#1e293b')
+              .replace(/oklab\([^)]+\)/gi, '#1e293b')
+              .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
+              .replace(/lab\([^)]+\)/gi, '#334155')
+            );
+          }
+        });
+
+        // 3. Find the cloned target element and ensure its container hierarchy is fully expanded and unconstrained
+        const clonedTarget = (clonedDoc.getElementById(targetId) || clonedDoc.querySelector('#' + targetId)) as HTMLElement | null;
+        if (clonedTarget) {
+          clonedTarget.style.boxShadow = 'none';
+          clonedTarget.style.borderRadius = '0px';
+          clonedTarget.style.transform = 'none';
+          clonedTarget.style.maxWidth = '100%';
+          clonedTarget.style.width = '100%';
+          clonedTarget.style.margin = '0 auto';
+          clonedTarget.style.padding = '16px 20px';
+
+          // Unconstrain all parent containers in clonedDoc so nothing is scrolled or clipped
+          let parent = clonedTarget.parentElement;
+          while (parent && parent !== clonedDoc.body) {
+            parent.style.overflow = 'visible';
+            parent.style.maxHeight = 'none';
+            parent.style.height = 'auto';
+            parent.style.transform = 'none';
+            parent.style.padding = '0';
+            parent.style.margin = '0';
+            parent = parent.parentElement;
+          }
+        }
+      }
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+  };
+
+  try {
+    await html2pdf().from(element).set(opt).save();
+  } catch (err) {
+    console.warn("PDF Export Error:", err);
+  }
+};
+
 export const calculateWorkDays = (startDateStr: string, endDateStr: string, userPosition?: string): number => {
   if (!startDateStr || !endDateStr) return 0;
   const startParts = startDateStr.split('-').map(Number);
@@ -267,30 +477,79 @@ export default function ApprovalCutiView({
 
   return (
     <div id="approval-cuti-view" className="space-y-6">
-      {/* CSS printing support embedded directly to make it incredibly robust and robust */}
+      {/* CSS printing support embedded directly to make it incredibly robust */}
       <style>{`
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 12mm 15mm;
+          }
+          html, body {
+            background: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
+          }
+          .no-print, header, nav, aside {
+            display: none !important;
+          }
+          div.fixed.inset-0 {
+            position: static !important;
+            background: transparent !important;
+            backdrop-filter: none !important;
+            display: block !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            max-height: none !important;
+            height: auto !important;
+          }
+          div.fixed.inset-0 > div,
+          div.fixed.inset-0 > div > div {
+            position: static !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            max-height: none !important;
+            height: auto !important;
+            display: block !important;
           }
           #print-letter-target, #print-letter-target * {
-            visibility: visible;
+            visibility: visible !important;
           }
           #print-letter-target {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            padding: 2.5cm !important;
-            margin: 0 !important;
-            background: white !important;
-            color: black !important;
+            position: relative !important;
+            left: auto !important;
+            top: auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            background: #ffffff !important;
+            color: #000000 !important;
             box-shadow: none !important;
             border: none !important;
             font-size: 11pt !important;
-          }
-          .no-print {
-            display: none !important;
+            transform: none !important;
+            box-sizing: border-box !important;
           }
         }
       `}</style>
@@ -558,38 +817,25 @@ export default function ApprovalCutiView({
                         </td>
                         <td className="py-4 px-5">
                           <div className="flex items-center justify-center gap-1.5">
-                            {leave.status === 'Approved' && (
-                              <button
-                                onClick={() => setSelectedPrintLeave(leave)}
-                                className="px-3 py-1.5 bg-[#0B1E43] hover:bg-[#07142E] text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all shadow-sm cursor-pointer"
-                              >
-                                <Printer className="w-3.5 h-3.5" />
-                                <span>PDF</span>
-                              </button>
-                            )}
-
-                            {/* Enable edit for employees on their own leaves, and for approved leaves */}
-                            {(!isAdmin || leave.employeeId === user.id || leave.status === 'Approved') && (
-                              <button
-                                onClick={() => setEditingLeave(leave)}
-                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all shadow-sm cursor-pointer"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                                <span>Ubah</span>
-                              </button>
-                            )}
+                            <button
+                              onClick={() => setSelectedPrintLeave(leave)}
+                              className="px-3 py-1.5 bg-[#0B1E43] hover:bg-[#07142E] text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition-all shadow-sm cursor-pointer"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>PDF</span>
+                            </button>
 
                             {isAdmin && leave.status === 'Pending' && (
-                              <div className="flex gap-1.5">
+                              <div className="flex gap-1.5 ml-1">
                                 <button
                                   onClick={() => onApproveLeave(leave.id, true)}
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold uppercase rounded-md transition-all shadow-sm"
+                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold uppercase rounded-md transition-all shadow-sm cursor-pointer"
                                 >
                                   Setuju
                                 </button>
                                 <button
                                   onClick={() => onApproveLeave(leave.id, false)}
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold uppercase rounded-md transition-all shadow-sm"
+                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-bold uppercase rounded-md transition-all shadow-sm cursor-pointer"
                                 >
                                   Tolak
                                 </button>
@@ -614,10 +860,10 @@ export default function ApprovalCutiView({
 
       {/* High-Fidelity Printable Leave Document Overlay Modal */}
       {selectedPrintLeave && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 no-print">
-          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col h-[90vh]">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
             {/* Modal Header */}
-            <div className="px-6 py-4 bg-[#0B1E43] text-white flex justify-between items-center shrink-0">
+            <div className="px-6 py-4 bg-[#0B1E43] text-white flex justify-between items-center shrink-0 no-print">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-300" />
                 <span className="font-bold text-sm tracking-tight">Dokumen Permohonan Cuti Resmi (Siap Cetak / PDF)</span>
@@ -630,26 +876,28 @@ export default function ApprovalCutiView({
               </button>
             </div>
 
-            {/* Document Printable View Container - Satu kesatuan utuh & background putih semua */}
-            <div
-              id="print-letter-target"
-              className="flex-1 overflow-y-auto p-8 md:p-12 text-black bg-white font-serif text-sm leading-relaxed flex flex-col gap-8 max-h-[70vh] w-full"
-            >
+            {/* Scrollable Container for Preview inside Modal */}
+            <div className="flex-1 overflow-y-auto bg-slate-100 p-4 sm:p-6 flex justify-center items-start">
+              {/* Document Printable View Container - Unconstrained height so html2canvas captures full document */}
+              <div
+                id="print-letter-target"
+                className="w-full max-w-2xl bg-white p-6 sm:p-10 text-black font-serif text-sm leading-relaxed flex flex-col gap-6 shadow-sm rounded-lg"
+              >
                 {/* Letter Content Block */}
                 <div>
                   {/* Top Right Date */}
-                  <div className="text-right font-serif text-sm mb-8 text-slate-800">
+                  <div className="text-right font-serif text-sm mb-6 text-slate-800">
                     Pekanbaru, {formatIndonesianDate(selectedPrintLeave.createdAt || selectedPrintLeave.startDate)}
                   </div>
 
                   {/* Hal & Address block */}
-                  <div className="space-y-4 mb-8">
+                  <div className="space-y-3 mb-6">
                     <div className="flex font-serif text-sm text-slate-800">
                       <span className="w-16">Hal</span>
                       <span className="font-normal">: Permohonan {selectedPrintLeave.type === 'Cuti' ? 'Cuti Tahunan' : selectedPrintLeave.type === 'Sakit' ? 'Cuti Sakit' : 'Izin'}</span>
                     </div>
 
-                    <div className="pt-2 font-serif text-sm text-slate-800 space-y-0.5">
+                    <div className="pt-1 font-serif text-sm text-slate-800 space-y-0.5">
                       <p>Kepada</p>
                       <p className="font-normal">Yth. Kepala Subbagian Tata Usaha dan Rumah Tangga</p>
                       <p>di tempat</p>
@@ -657,7 +905,7 @@ export default function ApprovalCutiView({
                   </div>
 
                   {/* Body Greeting */}
-                  <div className="space-y-4 mb-6">
+                  <div className="space-y-3 mb-6">
                     <p className="font-serif text-sm text-slate-800">Dengan hormat,</p>
                     <p className="font-serif text-sm text-slate-800">Yang bertanda tangan di bawah ini:</p>
                     
@@ -684,141 +932,88 @@ export default function ApprovalCutiView({
                   </div>
                 </div>
 
-                {/* Signatures Area matching second image perfectly */}
-                <div className="pt-8 border-t border-slate-200 font-serif text-sm text-slate-800">
+                {/* Signatures Area */}
+                <div className="pt-6 font-serif text-sm text-slate-800">
                   <div className="grid grid-cols-2 gap-8 text-center">
                     {/* Left: Approver */}
                     <div className="space-y-1">
                       <p>Menyetujui,</p>
                       <p className="text-sm text-slate-800 font-serif">Kasubbag Tata Usaha dan Rumah Tangga,</p>
-                      <div className="h-16 flex items-center justify-center relative">
-                        {/* Real hand-written vector ink style drawing */}
-                        {selectedPrintLeave.type !== 'Cuti' && (
-                          <svg width="110" height="40" viewBox="0 0 120 45" fill="none" className="text-blue-800/85">
-                            <path d="M15 22 C35 8, 55 35, 75 12 C90 3, 100 28, 115 18 M35 8 L45 32 M70 10 L65 28" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </div>
-                      <p className="text-slate-900 font-serif">{selectedPrintLeave.approvedBy || 'Ahmad Nauval'}</p>
-                      <p className="text-xs font-serif text-slate-500">NIP 198210042002121003</p>
+                      <div className="h-24"></div>
+                      <p className="text-slate-900 font-serif font-bold uppercase">{(selectedPrintLeave.approvedBy || 'AHMAD NAUVAL').toUpperCase()}</p>
                     </div>
 
                     {/* Right: Requester */}
                     <div className="space-y-1">
                       <p className="text-slate-800 font-serif">Pemohon,</p>
                       <p className="text-sm text-slate-500 font-serif invisible">Spacer</p>
-                      <div className="h-16 flex items-center justify-center relative">
-                        {/* Real hand-written vector ink style drawing */}
-                        {selectedPrintLeave.type !== 'Cuti' && (
-                          <svg width="110" height="40" viewBox="0 0 120 45" fill="none" className="text-slate-800/85">
-                            <path d="M12 28 C32 23, 42 3, 62 18 C82 28, 92 8, 108 13 M28 32 L78 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </div>
-                      <p className="text-slate-900 font-serif">{selectedPrintLeave.employeeName}</p>
+                      <div className="h-24"></div>
+                      <p className="text-slate-900 font-serif font-bold">{selectedPrintLeave.employeeName}</p>
                     </div>
                   </div>
 
                   {/* Centered Backup Officers */}
-                  <div className="mt-8 text-center space-y-3">
-                    <p className="text-xs uppercase tracking-wider text-slate-500 font-serif">Petugas Penanggung Jawab,</p>
+                  <div className="mt-10 text-center space-y-3">
+                    <p className="text-sm text-slate-800 font-serif">Petugas Penanggung Jawab,</p>
                     
-                    <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                    <div className="grid grid-cols-2 gap-6 max-w-md mx-auto pt-2">
                       {/* Backup 1 */}
                       <div className="space-y-1 font-serif">
-                        <div className="h-12 flex items-center justify-center font-serif">
-                          {selectedPrintLeave.type !== 'Cuti' && (
-                            <svg width="90" height="30" viewBox="0 0 120 45" fill="none" className="text-blue-900/80">
-                              <path d="M10 20 Q30 5 45 35 T85 15 T110 25 M35 15 C45 15, 40 30, 50 30" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </div>
-                        <p className="text-slate-700 text-xs border-t border-slate-200 pt-1 font-serif">{selectedPrintLeave.backup1 || 'Robby Andayani'}</p>
+                        <div className="h-24"></div>
+                        <p className="text-slate-900 text-sm font-bold font-serif uppercase">{(selectedPrintLeave.backup1 || 'ROBBY ANDAYANI').toUpperCase()}</p>
                       </div>
 
                       {/* Backup 2 */}
                       <div className="space-y-1 font-serif">
-                        <div className="h-12 flex items-center justify-center font-serif">
-                          {selectedPrintLeave.type !== 'Cuti' && (
-                            <svg width="90" height="30" viewBox="0 0 120 45" fill="none" className="text-slate-800/80">
-                              <path d="M15 15 C30 35, 55 5, 75 35 C90 10, 100 25, 115 15 M45 25 H85" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </div>
-                        <p className="text-slate-700 text-xs border-t border-slate-200 pt-1 font-serif">{selectedPrintLeave.backup2 || 'Aditya Pratama'}</p>
+                        <div className="h-24"></div>
+                        <p className="text-slate-900 text-sm font-bold font-serif uppercase">{(selectedPrintLeave.backup2 || 'ADITYA PRATAMA').toUpperCase()}</p>
                       </div>
                     </div>
                   </div>
                 </div>
 
+              </div>
             </div>
 
             {/* Action Bar (Print & Close) */}
-            <div className="px-6 py-4 bg-white border-t border-slate-200 flex justify-end gap-3 shrink-0">
+            <div className="px-6 py-4 bg-white border-t border-slate-200 flex flex-wrap justify-end gap-3 shrink-0 no-print">
               <button
                 onClick={() => setSelectedPrintLeave(null)}
                 className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
               >
-                Kembali
+                Tutup
               </button>
+
+              {/* Direct Print Button */}
+              <button
+                onClick={() => triggerPrint('print-letter-target', `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}`)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer active:scale-95"
+              >
+                <Printer className="w-4 h-4 text-slate-600" />
+                <span>Kirim ke Printer</span>
+              </button>
+
+              {/* Download PDF Button */}
               <button
                 onClick={() => {
                   const element = document.getElementById('print-letter-target');
-                  
-                  const runNativePrint = () => {
-                    try {
-                      window.print();
-                    } catch (printErr) {
-                      console.warn("Native print was blocked or failed:", printErr);
-                    }
-                  };
+                  if (!element) return;
+                  const filename = `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;
 
-                  if (element) {
-                    const downloadPDFAndMaybePrint = () => {
-                      // @ts-ignore
-                      const html2pdf = window.html2pdf;
-                      if (html2pdf) {
-                        const opt = {
-                          margin:       [0.5, 0.5, 0.5, 0.5],
-                          filename:     `Surat_Permohonan_Cuti_${selectedPrintLeave.employeeName.replace(/\s+/g, '_')}.pdf`,
-                          image:        { type: 'jpeg', quality: 0.98 },
-                          html2canvas:  { scale: 2, useCORS: true },
-                          jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
-                        };
-                        
-                        // Generate and save the PDF, then trigger native print cleanly
-                        html2pdf().from(element).set(opt).save()
-                          .then(() => {
-                            setTimeout(runNativePrint, 300);
-                          })
-                          .catch((err: any) => {
-                            console.error("html2pdf generation failed, falling back to print:", err);
-                            runNativePrint();
-                          });
-                      } else {
-                        runNativePrint();
-                      }
-                    };
-
-                    // @ts-ignore
-                    if (!window.html2pdf) {
-                      const script = document.createElement('script');
-                      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-                      script.onload = () => {
-                        downloadPDFAndMaybePrint();
-                      };
-                      document.body.appendChild(script);
-                    } else {
-                      downloadPDFAndMaybePrint();
-                    }
+                  // @ts-ignore
+                  if (!window.html2pdf) {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                    script.onload = () => triggerPdfDownload(element, filename);
+                    document.body.appendChild(script);
                   } else {
-                    runNativePrint();
+                    triggerPdfDownload(element, filename);
                   }
                 }}
-                className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer"
+                className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
               >
-                <Printer className="w-4 h-4" />
-                <span>Cetak Dokumen Resmi (PDF)</span>
+                <FileText className="w-4 h-4 text-amber-400" />
+                <span>Unduh Dokumen Resmi (PDF)</span>
               </button>
             </div>
           </div>

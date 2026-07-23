@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Check, X, Printer, Search, Calendar, User, Clock, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Employee, LeaveRequest, Logbook, OfficeSettings } from '../types';
+import { triggerPdfDownload, triggerPrint } from './ApprovalCutiView';
 
 interface OvertimeRequest {
   id: string;
@@ -683,30 +684,55 @@ export default function VerifikasiApprovalView({
           <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8">
             
             {/* Modal Actions Header */}
-            <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+            <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center no-print">
               <span className="font-bold text-slate-800 text-sm flex items-center gap-2">
                 <Printer className="w-4 h-4 text-blue-600" />
                 <span>Cetak {selectedRequestForPrint.type === 'Surat Perintah Kerja Lembur' ? 'Surat Perintah Kerja Lembur' : 'Surat Keterangan Persetujuan Cuti'} ({selectedRequestForPrint.displayId})</span>
               </span>
               <div className="flex gap-2">
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+                  onClick={() => triggerPrint('printable-area', `Dokumen_${selectedRequestForPrint.displayId || 'Resmi'}`)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                 >
-                  <Printer className="w-4 h-4" />
+                  <Printer className="w-4 h-4 text-slate-600" />
                   <span>Kirim ke Printer</span>
                 </button>
+
+                <button
+                  onClick={() => {
+                    const element = document.getElementById('printable-area');
+                    if (!element) return;
+                    const filename = `Dokumen_${selectedRequestForPrint.displayId || 'Resmi'}.pdf`;
+
+                    // @ts-ignore
+                    if (!window.html2pdf) {
+                      const script = document.createElement('script');
+                      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                      script.onload = () => triggerPdfDownload(element, filename);
+                      document.body.appendChild(script);
+                    } else {
+                      triggerPdfDownload(element, filename);
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <FileText className="w-4 h-4 text-amber-400" />
+                  <span>Unduh Dokumen Resmi (PDF)</span>
+                </button>
+
                 <button
                   onClick={() => setSelectedRequestForPrint(null)}
-                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition-all"
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer"
                 >
                   Tutup
                 </button>
               </div>
             </div>
 
-            {/* Printable Letter Container */}
-            <div id="printable-area" className="p-12 text-black bg-white font-serif text-sm leading-relaxed max-h-[70vh] overflow-y-auto print:p-0">
+            {/* Scrollable Container for Preview */}
+            <div className="max-h-[75vh] overflow-y-auto p-4 sm:p-6 bg-slate-50 flex justify-center">
+              {/* Printable Letter Container */}
+              <div id="printable-area" className="w-full max-w-2xl p-8 sm:p-12 text-black bg-white font-serif text-sm leading-relaxed shadow-sm rounded-lg print:p-0">
               
                {/* KEMENTERIAN KEUANGAN KOP SURAT */}
               <div className="flex items-center justify-between gap-4 pb-4 border-b-4 border-black">
@@ -798,12 +824,12 @@ export default function VerifikasiApprovalView({
                     <p className="font-bold text-xs uppercase">Kepala Subbagian Tata Usaha dan Rumah Tangga,</p>
                   </div>
                   <div>
-                    <p className="font-bold text-xs underline uppercase">Ahmad Nauval</p>
-                    <p className="text-[10px] font-sans text-slate-500 font-medium">NIP 198210042002121003</p>
+                    <p className="font-bold text-xs underline uppercase">AHMAD NAUVAL</p>
                   </div>
                 </div>
               </div>
 
+            </div>
             </div>
 
           </div>

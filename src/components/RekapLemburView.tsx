@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Clock, Printer, CheckCircle, HelpCircle, FileSpreadsheet, Sparkles } from 'lucide-react';
 import { Employee, Attendance, LeaveRequest, OfficeSettings } from '../types';
+import { triggerPdfDownload, triggerPrint } from './ApprovalCutiView';
 
 interface RekapLemburViewProps {
   employees: Employee[];
@@ -134,7 +135,10 @@ export default function RekapLemburView({ employees, attendance, settings, leave
             const diffMin = (outH * 60 + outM) - (inH * 60 + inM);
             if (diffMin > 0) {
               const diffHours = diffMin / 60;
-              return Math.min(8, Math.round(diffHours * 10) / 10); // round to 1 decimal place
+              if (diffHours >= 2) {
+                return Math.min(8, Math.floor(diffHours)); // Minimal 2 jam, kelipatan per 1 jam
+              }
+              return 0;
             }
           }
         }
@@ -176,7 +180,10 @@ export default function RekapLemburView({ employees, attendance, settings, leave
     }
 
     if (approvedOvertimeHours > 0) {
-      return approvedOvertimeHours;
+      if (approvedOvertimeHours >= 2) {
+        return Math.min(8, Math.floor(approvedOvertimeHours));
+      }
+      return 0;
     }
 
     // 2. Check if there is actual registered checkOut and checkIn that represents overtime
@@ -235,9 +242,12 @@ export default function RekapLemburView({ employees, attendance, settings, leave
       }
 
       if (coMin > soMin) {
-        // Overtime is difference in hours, rounded to 0.5 or 1 decimal place
+        // Overtime is difference in hours, rounded down per 1 full hour (min 2 hours)
         const diffHours = (coMin - soMin) / 60;
-        return Math.min(8, Math.round(diffHours * 10) / 10); // cap at 8 hours max standard per day
+        if (diffHours >= 2) {
+          return Math.min(8, Math.floor(diffHours));
+        }
+        return 0;
       }
     }
 
@@ -966,7 +976,7 @@ export default function RekapLemburView({ employees, attendance, settings, leave
             Rekapitulasi Lembur PPNPN
           </h2>
           <p className="text-xs text-slate-500 mt-1 font-medium">
-            Menghitung otomatis uang lembur malam, lembur hari kerja, dan uang makan lembur berdasarkan standar peraturan keuangan Ditjen Perbendaharaan.
+            Menghitung otomatis uang lembur malam, lembur hari kerja, dan uang makan lembur berdasarkan standar peraturan keuangan Ditjen Perbendaharaan (Lembur PPNPN baru dihitung setelah dilaksanakan minimal 2 jam).
           </p>
         </div>
 
@@ -1069,8 +1079,8 @@ export default function RekapLemburView({ employees, attendance, settings, leave
                     <span>Ekspor Excel (.xls)</span>
                   </button>
                   <button
-                    onClick={() => window.print()}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => triggerPrint('print-rekap-lembur', `Daftar_Pembayaran_Lembur_${selectedMonthLabel}_${selectedYear}`)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                   >
                     <Printer className="w-4 h-4" />
                     <span>Kirim ke Printer</span>
