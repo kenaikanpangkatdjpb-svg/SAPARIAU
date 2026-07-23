@@ -85,7 +85,10 @@ if (browserPrint) {
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
 
-      const pdfBlob = await window.print();().from(element).set(opt).outputPdf('blob');
+      const pdfBlob = await html2pdf()
+  .from(element)
+  .set(opt)
+  .outputPdf("blob");
       const blobUrl = URL.createObjectURL(pdfBlob);
 
       // Try printing via hidden iframe using the generated PDF blob
