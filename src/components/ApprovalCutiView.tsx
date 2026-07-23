@@ -134,8 +134,7 @@ if (browserPrint) {
 
 export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
   // @ts-ignore
-  const window.print(); = window.window.print();;
-  if (!window.print(); || !element) return;
+    if (!window.print(); || !element) return;
 
   const targetId = element.id || 'printable-area';
 
