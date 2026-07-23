@@ -17,9 +17,8 @@ export const triggerPrint = async (elementId: string, documentTitle: string = 'D
   }
 
   // @ts-ignore
-const browserPrint = window.print;
-
-if (browserPrint) {
+  const html2pdf = window.html2pdf;
+  if (html2pdf) {
     try {
       const opt = {
         margin: [8, 8, 8, 8],
@@ -85,10 +84,7 @@ if (browserPrint) {
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
 
-      const pdfBlob = await html2pdf()
-  .from(element)
-  .set(opt)
-  .outputPdf("blob");
+      const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
 
       // Try printing via hidden iframe using the generated PDF blob
@@ -119,7 +115,7 @@ if (browserPrint) {
       }, 1000);
       return;
     } catch (err) {
-      console.warn("window.print(); print conversion error, falling back to window.print():", err);
+      console.warn("html2pdf print conversion error, falling back to window.print():", err);
     }
   }
 
@@ -137,7 +133,8 @@ if (browserPrint) {
 
 export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
   // @ts-ignore
-    if (!window.print(); || !element) return;
+  const html2pdf = window.html2pdf;
+  if (!html2pdf || !element) return;
 
   const targetId = element.id || 'printable-area';
 
@@ -209,7 +206,7 @@ export const triggerPdfDownload = async (element: HTMLElement, filename: string)
   };
 
   try {
-    await window.print();().from(element).set(opt).save();
+    await html2pdf().from(element).set(opt).save();
   } catch (err) {
     console.warn("PDF Export Error:", err);
   }
@@ -313,12 +310,12 @@ export default function ApprovalCutiView({
   const [selectedPrintLeave, setSelectedPrintLeave] = useState<LeaveRequest | null>(null);
   const [editingLeave, setEditingLeave] = useState<LeaveRequest | null>(null);
 
-  // Pre-load window.print(); library for seamless PDF generation
+  // Pre-load html2pdf library for seamless PDF generation
   useEffect(() => {
     // @ts-ignore
-    if (!window.window.print();) {
+    if (!window.html2pdf) {
       const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/window.print();.js/0.10.1/window.print();.bundle.min.js';
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
       script.async = true;
       document.body.appendChild(script);
     }
@@ -1004,9 +1001,9 @@ export default function ApprovalCutiView({
                   const filename = `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;
 
                   // @ts-ignore
-                  if (!window.window.print();) {
+                  if (!window.html2pdf) {
                     const script = document.createElement('script');
-                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/window.print();.js/0.10.1/window.print();.bundle.min.js';
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
                     script.onload = () => triggerPdfDownload(element, filename);
                     document.body.appendChild(script);
                   } else {
