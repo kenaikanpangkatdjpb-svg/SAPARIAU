@@ -896,15 +896,9 @@ export default function ApprovalCutiView({
                   if (!element) return;
                   const filename = `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;
 
-                  // @ts-ignore
-                  if (!window.html2pdf) {
-                    const script = document.createElement('script');
-                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-                    script.onload = () => triggerPdfDownload(element, filename);
-                    document.body.appendChild(script);
-                  } else {
-                    triggerPdfDownload(element, filename);
-                  }
+                  onClick={() => {
+  triggerPrint(element.id, filename);
+}}
                 }}
                 className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
               >
