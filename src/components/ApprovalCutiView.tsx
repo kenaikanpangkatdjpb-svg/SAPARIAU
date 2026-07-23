@@ -2,32 +2,136 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FileText, CalendarRange, CheckCircle2, XCircle, AlertCircle, Send, Printer, X, Eye } from 'lucide-react';
 import { Employee, LeaveRequest } from '../types';
 
-export const triggerPrint = async (
-  elementId: string,
-  documentTitle: string = "Dokumen"
-) => {
+export const triggerPrint = async (elementId: string, documentTitle: string = 'Dokumen') => {
   const element = document.getElementById(elementId);
-
+  
   if (!element) {
     console.warn("Print target element not found:", elementId);
-    window.print();
+    try { window.print(); } catch (e) { console.warn(e); }
     return;
   }
 
   const originalTitle = document.title;
-  document.title = documentTitle;
+  if (documentTitle) {
+    document.title = documentTitle;
+  }
 
+  // @ts-ignore
+  const html2pdf = window.html2pdf;
+  if (html2pdf) {
+    try {
+      const opt = {
+        margin: [8, 8, 8, 8],
+        filename: `${documentTitle}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          letterRendering: true,
+          scrollX: 0,
+          scrollY: 0,
+          onclone: (clonedDoc: Document) => {
+            // Sanitize styles to prevent blank renders in html2canvas
+            const styleEls = clonedDoc.querySelectorAll('style');
+            styleEls.forEach((style) => {
+              if (style.textContent) {
+                style.textContent = style.textContent
+                  .replace(/oklch\([^)]+\)/gi, '#1e293b')
+                  .replace(/oklab\([^)]+\)/gi, '#1e293b')
+                  .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
+                  .replace(/lab\([^)]+\)/gi, '#334155');
+              }
+            });
+
+            const allElements = clonedDoc.querySelectorAll('*');
+            allElements.forEach((el) => {
+              const styleAttr = el.getAttribute('style');
+              if (styleAttr && /oklch|oklab|color-mix|lab/i.test(styleAttr)) {
+                el.setAttribute('style', styleAttr
+                  .replace(/oklch\([^)]+\)/gi, '#1e293b')
+                  .replace(/oklab\([^)]+\)/gi, '#1e293b')
+                  .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
+                  .replace(/lab\([^)]+\)/gi, '#334155')
+                );
+              }
+            });
+
+            const clonedTarget = (clonedDoc.getElementById(elementId) || clonedDoc.querySelector('#' + elementId)) as HTMLElement | null;
+            if (clonedTarget) {
+              clonedTarget.style.boxShadow = 'none';
+              clonedTarget.style.borderRadius = '0px';
+              clonedTarget.style.transform = 'none';
+              clonedTarget.style.maxWidth = '100%';
+              clonedTarget.style.width = '100%';
+              clonedTarget.style.margin = '0 auto';
+              clonedTarget.style.padding = '16px 20px';
+
+              let parent = clonedTarget.parentElement;
+              while (parent && parent !== clonedDoc.body) {
+                parent.style.overflow = 'visible';
+                parent.style.maxHeight = 'none';
+                parent.style.height = 'auto';
+                parent.style.transform = 'none';
+                parent.style.padding = '0';
+                parent.style.margin = '0';
+                parent = parent.parentElement;
+              }
+            }
+          }
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+
+      const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
+      const blobUrl = URL.createObjectURL(pdfBlob);
+
+      // Try printing via hidden iframe using the generated PDF blob
+      const printFrame = document.createElement('iframe');
+      printFrame.style.position = 'fixed';
+      printFrame.style.right = '0';
+      printFrame.style.bottom = '0';
+      printFrame.style.width = '0px';
+      printFrame.style.height = '0px';
+      printFrame.style.border = '0';
+      printFrame.src = blobUrl;
+      document.body.appendChild(printFrame);
+
+      printFrame.onload = () => {
+        setTimeout(() => {
+          try {
+            printFrame.contentWindow?.focus();
+            printFrame.contentWindow?.print();
+          } catch (e) {
+            console.warn("Iframe print fallback:", e);
+            window.open(blobUrl, '_blank');
+          }
+        }, 300);
+      };
+
+      setTimeout(() => {
+        document.title = originalTitle;
+      }, 1000);
+      return;
+    } catch (err) {
+      console.warn("html2pdf print conversion error, falling back to window.print():", err);
+    }
+  }
+
+  // Fallback direct window.print()
   try {
     window.print();
-  } catch (err) {
-    console.warn("window.print failed:", err);
+  } catch (e) {
+    console.warn("Direct window.print failed:", e);
   } finally {
     setTimeout(() => {
       document.title = originalTitle;
     }, 1000);
   }
 };
- export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
+
+export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
   // @ts-ignore
   const html2pdf = window.html2pdf;
   if (!html2pdf || !element) return;
@@ -890,21 +994,24 @@ export default function ApprovalCutiView({
               </button>
 
               {/* Download PDF Button */}
-              {/* Download PDF Button */}
-<button
-  onClick={() => {
-    const element = document.getElementById('print-letter-target');
-    if (!element) return;
+              <button
+                onClick={() => {
+                  const element = document.getElementById('print-letter-target');
+                  if (!element) return;
+                  const filename = `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;
 
-    const filename = `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;
-
-    triggerPrint(element.id, filename);
-  }}
-  className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
->
-  <FileText className="w-4 h-4 text-amber-400" />
-  <span>Unduh Dokumen Resmi (PDF)</span>
-</button>
+                  // @ts-ignore
+                  if (!window.html2pdf) {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+                    script.onload = () => triggerPdfDownload(element, filename);
+                    document.body.appendChild(script);
+                  } else {
+                    triggerPdfDownload(element, filename);
+                  }
+                }}
+                className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
+              >
                 <FileText className="w-4 h-4 text-amber-400" />
                 <span>Unduh Dokumen Resmi (PDF)</span>
               </button>
