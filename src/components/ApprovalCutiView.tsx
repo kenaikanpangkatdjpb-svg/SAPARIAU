@@ -84,8 +84,8 @@ export const triggerPrint = async (elementId: string, documentTitle: string = 'D
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
 
-      const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
-      const blobUrl = URL.createObjectURL(pdfBlob);
+      window.print();
+return;
 
       // Try printing via hidden iframe using the generated PDF blob
       const printFrame = document.createElement('iframe');
