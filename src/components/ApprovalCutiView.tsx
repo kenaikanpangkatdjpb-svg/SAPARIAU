@@ -27,12 +27,6 @@ export const triggerPrint = async (
     }, 1000);
   }
 };
-
-export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
-  // @ts-ignore
-  const html2pdf = window.html2pdf;
-  ...
-
  export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
   // @ts-ignore
   const html2pdf = window.html2pdf;
