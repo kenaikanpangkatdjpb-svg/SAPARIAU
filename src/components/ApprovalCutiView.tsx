@@ -987,33 +987,10 @@ export default function ApprovalCutiView({
               {/* Direct Print Button */}
               <button
                 onClick={() => triggerPrint('print-letter-target', `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}`)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl flex items-center gap-2 transition-all cursor-pointer active:scale-95"
-              >
-                <Printer className="w-4 h-4 text-slate-600" />
-                <span>Kirim ke Printer</span>
-              </button>
-
-              {/* Download PDF Button */}
-              <button
-                onClick={() => {
-                  const element = document.getElementById('print-letter-target');
-                  if (!element) return;
-                  const filename = `Surat_Permohonan_Cuti_${(selectedPrintLeave.employeeName || 'Pegawai').replace(/\s+/g, '_')}.pdf`;
-
-                  // @ts-ignore
-                  if (!window.html2pdf) {
-                    const script = document.createElement('script');
-                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-                    script.onload = () => triggerPdfDownload(element, filename);
-                    document.body.appendChild(script);
-                  } else {
-                    triggerPdfDownload(element, filename);
-                  }
-                }}
                 className="px-5 py-2 bg-[#0B1E43] hover:bg-[#07142E] text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-all shadow-md cursor-pointer active:scale-95"
               >
-                <FileText className="w-4 h-4 text-amber-400" />
-                <span>Unduh Dokumen Resmi (PDF)</span>
+                <Printer className="w-4 h-4 text-amber-400" />
+                <span>Kirim ke Printer</span>
               </button>
             </div>
           </div>
