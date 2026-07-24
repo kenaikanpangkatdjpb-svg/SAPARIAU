@@ -203,8 +203,9 @@ export const triggerPdfDownload = async (element: HTMLElement, filename: string)
       }
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-  };
+    pagebreak: {
+  mode: ['css', 'legacy']
+}
 
   try {
     await html2pdf().from(element).set(opt).save();
