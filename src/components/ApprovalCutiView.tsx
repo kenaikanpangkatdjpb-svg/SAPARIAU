@@ -21,7 +21,7 @@ export const triggerPrint = async (elementId: string, documentTitle: string = 'D
   if (html2pdf) {
     try {
       const opt = {
-       margin: [5,5,5,5],
+        margin: [8, 8, 8, 8],
         filename: `${documentTitle}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
@@ -81,9 +81,8 @@ export const triggerPrint = async (elementId: string, documentTitle: string = 'D
           }
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: {
-  mode: []
-}
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
 
       const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
@@ -533,45 +532,25 @@ export default function ApprovalCutiView({
           #print-letter-target, #print-letter-target * {
             visibility: visible !important;
           }
-         #print-letter-target {
-    position: relative !important;
-    left: auto !important;
-    top: auto !important;
-
-    display: block !important;
-
-    width: 100% !important;
-    max-width: 100% !important;
-
-    height: auto !important;
-    min-height: auto !important;
-    max-height: none !important;
-
-    overflow: visible !important;
-
-    padding: 12mm !important;
-    margin: 0 auto !important;
-
-    background: #ffffff !important;
-    color: #000000 !important;
-
-    border: none !important;
-    box-shadow: none !important;
-
-    transform: none !important;
-
-    page-break-before: auto !important;
-    page-break-after: auto !important;
-    page-break-inside: avoid !important;
-
-    break-before: auto !important;
-    break-after: auto !important;
-    break-inside: avoid !important;
-
-    box-sizing: border-box !important;
-
-    font-size: 11pt !important;
-}
+          #print-letter-target {
+            position: relative !important;
+            left: auto !important;
+            top: auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            max-height: none !important;
+            height: auto !important;
+            overflow: visible !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: none !important;
+            border: none !important;
+            font-size: 11pt !important;
+            transform: none !important;
+            box-sizing: border-box !important;
+          }
         }
       `}</style>
 
@@ -901,18 +880,10 @@ export default function ApprovalCutiView({
             <div className="flex-1 overflow-y-auto bg-slate-100 p-4 sm:p-6 flex justify-center items-start">
               {/* Document Printable View Container - Unconstrained height so html2canvas captures full document */}
               <div
-  <div
-    id="print-letter-target"
-    className="w-full max-w-2xl bg-white text-black font-serif text-sm leading-relaxed"
-    style={{
-        padding: "12mm",
-        display: "block",
-        overflow: "visible",
-        minHeight: "auto",
-        height: "auto"
-    }}
->
-                 {/* Letter Content Block */}
+                id="print-letter-target"
+                className="w-full max-w-2xl bg-white p-6 sm:p-10 text-black font-serif text-sm leading-relaxed flex flex-col gap-6 shadow-sm rounded-lg"
+              >
+                {/* Letter Content Block */}
                 <div>
                   {/* Top Right Date */}
                   <div className="text-right font-serif text-sm mb-6 text-slate-800">
