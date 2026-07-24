@@ -81,8 +81,9 @@ export const triggerPrint = async (elementId: string, documentTitle: string = 'D
           }
         },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-      };
+        pagebreak: {
+  mode: ['css', 'legacy']
+}
 
       const pdfBlob = await html2pdf().from(element).set(opt).outputPdf('blob');
       const blobUrl = URL.createObjectURL(pdfBlob);
