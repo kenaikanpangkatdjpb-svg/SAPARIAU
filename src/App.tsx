@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getStoredData, saveEmployees, saveAttendance, saveLeaves, saveLogbooks, saveSettings } from './utils/storage';
+import { getStoredData, saveEmployees, saveAttendance, saveLeaves, saveLogbooks, saveSettings, safeSetLocalStorageItem } from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
 import { 
   checkSupabaseConnection,
@@ -114,7 +114,7 @@ export default function App() {
           const dbEmps = await getEmployeesFromSupabase();
           if (dbEmps && dbEmps.length > 0) {
             setEmployees(dbEmps);
-            localStorage.setItem('ppnpn_employees', JSON.stringify(dbEmps));
+            safeSetLocalStorageItem('ppnpn_employees', dbEmps);
           } else if (dbEmps && dbEmps.length === 0 && data.employees.length > 0) {
             for (const emp of data.employees) {
               await upsertEmployeeToSupabase(emp);
@@ -123,22 +123,21 @@ export default function App() {
 
           // Sync Regular Attendance
           const dbAtt = await getAttendanceFromSupabase();
-
-if (dbAtt && dbAtt.length > 0) {
-  setAttendance(dbAtt);
-  localStorage.removeItem('ppnpn_attendance');
-} else if (dbAtt && dbAtt.length === 0 && data.attendance.length > 0) {
-  for (const att of data.attendance) {
-    await upsertAttendanceToSupabase(att);
-  }
-}
+          if (dbAtt && dbAtt.length > 0) {
+            setAttendance(dbAtt);
+            safeSetLocalStorageItem('ppnpn_attendance', dbAtt);
+          } else if (dbAtt && dbAtt.length === 0 && data.attendance.length > 0) {
+            for (const att of data.attendance) {
+              await upsertAttendanceToSupabase(att);
+            }
+          }
 
           // Sync Leaves
           const dbLeaves = await getLeavesFromSupabase();
           if (dbLeaves && dbLeaves.length > 0) {
             setLeaves(dbLeaves);
             const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
-            localStorage.setItem('ppnpn_leaves', JSON.stringify(filteredLeaves));
+            safeSetLocalStorageItem('ppnpn_leaves', filteredLeaves);
           } else if (dbLeaves && dbLeaves.length === 0 && data.leaves.length > 0) {
             for (const leave of data.leaves) {
               await upsertLeaveToSupabase(leave);
@@ -149,7 +148,7 @@ if (dbAtt && dbAtt.length > 0) {
           const dbLogs = await getLogbooksFromSupabase();
           if (dbLogs && dbLogs.length > 0) {
             setLogbooks(dbLogs);
-            localStorage.setItem('ppnpn_logbooks', JSON.stringify(dbLogs));
+            safeSetLocalStorageItem('ppnpn_logbooks', dbLogs);
           } else if (dbLogs && dbLogs.length === 0 && data.logbooks.length > 0) {
             for (const log of data.logbooks) {
               await upsertLogbookToSupabase(log);
@@ -160,7 +159,7 @@ if (dbAtt && dbAtt.length > 0) {
           const dbSettings = await getSettingsFromSupabase();
           if (dbSettings) {
             setSettings(dbSettings);
-            localStorage.setItem('ppnpn_settings', JSON.stringify(dbSettings));
+            safeSetLocalStorageItem('ppnpn_settings', dbSettings);
           } else {
             await upsertSettingsToSupabase(data.settings);
           }
@@ -168,7 +167,7 @@ if (dbAtt && dbAtt.length > 0) {
           // Sync Overtime Attendance Records
           const dbOvertime = await getOvertimeFromSupabase();
           if (dbOvertime && dbOvertime.length > 0) {
-            localStorage.setItem('overtime_attendance_records', JSON.stringify(dbOvertime));
+            safeSetLocalStorageItem('overtime_attendance_records', dbOvertime);
           } else {
             const localOvertime = localStorage.getItem('overtime_attendance_records');
             if (localOvertime) {
@@ -202,31 +201,31 @@ if (dbAtt && dbAtt.length > 0) {
           const dbEmps = await getEmployeesFromSupabase();
           if (dbEmps && dbEmps.length > 0) {
             setEmployees(dbEmps);
-            localStorage.setItem('ppnpn_employees', JSON.stringify(dbEmps));
+            safeSetLocalStorageItem('ppnpn_employees', dbEmps);
           }
 
           const dbAtt = await getAttendanceFromSupabase();
-
-if (dbAtt) {
-    setAttendance(dbAtt);
-}
+          if (dbAtt && dbAtt.length > 0) {
+            setAttendance(dbAtt);
+            safeSetLocalStorageItem('ppnpn_attendance', dbAtt);
+          }
 
           const dbLeaves = await getLeavesFromSupabase();
           if (dbLeaves && dbLeaves.length > 0) {
             setLeaves(dbLeaves);
             const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
-            localStorage.setItem('ppnpn_leaves', JSON.stringify(filteredLeaves));
+            safeSetLocalStorageItem('ppnpn_leaves', filteredLeaves);
           }
 
           const dbLogs = await getLogbooksFromSupabase();
           if (dbLogs && dbLogs.length > 0) {
             setLogbooks(dbLogs);
-            localStorage.setItem('ppnpn_logbooks', JSON.stringify(dbLogs));
+            safeSetLocalStorageItem('ppnpn_logbooks', dbLogs);
           }
 
           const dbOvertime = await getOvertimeFromSupabase();
           if (dbOvertime && dbOvertime.length > 0) {
-            localStorage.setItem('overtime_attendance_records', JSON.stringify(dbOvertime));
+            safeSetLocalStorageItem('overtime_attendance_records', dbOvertime);
           }
 
           window.dispatchEvent(new Event('storage'));
@@ -518,7 +517,7 @@ if (dbAtt) {
       const newRequestsKey = `overtime_requests_${updatedEmp.id}`;
       const oldRequestsData = localStorage.getItem(oldRequestsKey);
       if (oldRequestsData) {
-        localStorage.setItem(newRequestsKey, oldRequestsData);
+        safeSetLocalStorageItem(newRequestsKey, oldRequestsData);
         localStorage.removeItem(oldRequestsKey);
       }
 
@@ -538,7 +537,7 @@ if (dbAtt) {
             }
             return rec;
           });
-          localStorage.setItem('overtime_attendance_records', JSON.stringify(updatedRecords));
+          safeSetLocalStorageItem('overtime_attendance_records', updatedRecords);
         } catch (e) {
           console.error("Error updating overtime records", e);
         }
@@ -769,8 +768,7 @@ if (dbAtt) {
     }
 
     setAttendance(updatedAttendance);
-
-// jangan simpan attendance ke localStorage lagi
+    saveAttendance(updatedAttendance);
     setAbsenModalType(null);
     alert(`Berhasil melakukan Absen ${isMasuk ? 'Masuk' : 'Pulang'}!`);
   };
