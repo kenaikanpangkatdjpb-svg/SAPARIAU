@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Camera, MapPin, RefreshCw, CheckCircle, RotateCcw, AlertTriangle, ChevronLeft, History, Eye, Info, X, Clock, User } from 'lucide-react';
 import { Employee, OfficeSettings, Attendance } from '../types';
-import { compressImage } from '../utils/storage';
+import { compressImage, safeSetLocalStorageItem } from '../utils/storage';
 
 interface OvertimeAttendanceRecord {
   id: string;
@@ -54,38 +54,19 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
   const [overtimeRecords, setOvertimeRecords] = useState<OvertimeAttendanceRecord[]>([]);
 
   useEffect(() => {
-const loadRecords = async () => {
-  try {
-    const { getOvertimeFromSupabase } = await import("../utils/supabase");
-
-    const records = await getOvertimeFromSupabase();
-
-    if (records && records.length > 0) {
-      setOvertimeRecords(records);
-      localStorage.setItem(
-        "overtime_attendance_records",
-        JSON.stringify(records)
-      );
-      return;
-    }
-  } catch (e) {
-    console.error("Gagal mengambil data dari Supabase:", e);
-  }
-
-  const stored = localStorage.getItem("overtime_attendance_records");
-  if (stored) {
-    try {
-      setOvertimeRecords(JSON.parse(stored));
-      return;
-    } catch (e) {
-      console.error("Failed to parse overtime records", e);
-    }
-  }
-
-  // Pre-seed realistic records for Maliq or the current user
-  const isReset = localStorage.getItem("app_is_reset") === "true";
-  const initial: OvertimeAttendanceRecord[] = isReset ? [] : [
-     {
+    const loadRecords = () => {
+      const stored = localStorage.getItem('overtime_attendance_records');
+      if (stored) {
+        try {
+          setOvertimeRecords(JSON.parse(stored));
+        } catch (e) {
+          console.error("Failed to parse overtime records", e);
+        }
+      } else {
+        // Pre-seed realistic records for Maliq or the current user
+        const isReset = localStorage.getItem('app_is_reset') === 'true';
+        const initial: OvertimeAttendanceRecord[] = isReset ? [] : [
+          {
             id: `ov_att_${user.id}_2026-06-25`,
             employeeId: user.id,
             employeeName: user.name,
@@ -119,7 +100,7 @@ const loadRecords = async () => {
           }
         ];
         setOvertimeRecords(initial);
-        localStorage.setItem('overtime_attendance_records', JSON.stringify(initial));
+        safeSetLocalStorageItem('overtime_attendance_records', initial);
       }
     };
 
@@ -130,7 +111,7 @@ const loadRecords = async () => {
 
   const saveOvertimeRecords = (updated: OvertimeAttendanceRecord[]) => {
     setOvertimeRecords(updated);
-    localStorage.setItem('overtime_attendance_records', JSON.stringify(updated));
+    safeSetLocalStorageItem('overtime_attendance_records', updated);
     // Trigger storage event so that components recalculate if needed
     window.dispatchEvent(new Event('storage'));
 

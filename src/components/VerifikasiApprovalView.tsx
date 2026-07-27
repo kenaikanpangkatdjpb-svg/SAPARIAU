@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Check, X, Printer, Search, Calendar, User, Clock, FileText, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Employee, LeaveRequest, Logbook, OfficeSettings } from '../types';
 import { triggerPdfDownload, triggerPrint } from './ApprovalCutiView';
+import { safeSetLocalStorageItem } from '../utils/storage';
 
 interface OvertimeRequest {
   id: string;
@@ -164,7 +165,7 @@ export default function VerifikasiApprovalView({
               const index = items.findIndex(item => item.id === id);
               if (index !== -1) {
                 items[index].status = approve ? 'Approved' : 'Rejected';
-                localStorage.setItem(key, JSON.stringify(items));
+                safeSetLocalStorageItem(key, items);
                 window.dispatchEvent(new Event('storage'));
                 break;
               }
@@ -188,7 +189,7 @@ export default function VerifikasiApprovalView({
           const index = parsed.findIndex((item: any) => item.id === id);
           if (index !== -1) {
             parsed[index].status = approve ? 'Approved' : 'Rejected';
-            localStorage.setItem('overtime_attendance_records', JSON.stringify(parsed));
+            safeSetLocalStorageItem('overtime_attendance_records', parsed);
             
             // Sync to Supabase
             const updatedRec = parsed[index];

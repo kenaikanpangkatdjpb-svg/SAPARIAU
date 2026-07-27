@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Image, Save, Award, FileText, CheckCircle, Upload, RotateCcw } from 'lucide-react';
+import { safeSetLocalStorageItem } from '../utils/storage';
 
 interface KopLogoSettingsViewProps {
   onSave?: (data: any) => void;
@@ -41,7 +42,7 @@ export default function KopLogoSettingsView({ onSave }: KopLogoSettingsViewProps
             setKopLogoUrl(DEFAULT_LOGO);
             // Update storage immediately with the real logo
             const updated = { ...data, kopLogoUrl: DEFAULT_LOGO };
-            localStorage.setItem('kop_settings', JSON.stringify(updated));
+            safeSetLocalStorageItem('kop_settings', updated);
             window.dispatchEvent(new Event('kop_settings_changed'));
           } else {
             setKopLogoUrl(data.kopLogoUrl);
@@ -67,7 +68,7 @@ export default function KopLogoSettingsView({ onSave }: KopLogoSettingsViewProps
     };
     
     // Save to localStorage
-    localStorage.setItem('kop_settings', JSON.stringify(settingsPayload));
+    safeSetLocalStorageItem('kop_settings', settingsPayload);
     
     // Trigger custom window event to notify other components instantly
     window.dispatchEvent(new Event('kop_settings_changed'));
