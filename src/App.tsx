@@ -123,14 +123,15 @@ export default function App() {
 
           // Sync Regular Attendance
           const dbAtt = await getAttendanceFromSupabase();
-          if (dbAtt && dbAtt.length > 0) {
-            setAttendance(dbAtt);
-            localStorage.setItem('ppnpn_attendance', JSON.stringify(dbAtt));
-          } else if (dbAtt && dbAtt.length === 0 && data.attendance.length > 0) {
-            for (const att of data.attendance) {
-              await upsertAttendanceToSupabase(att);
-            }
-          }
+
+if (dbAtt && dbAtt.length > 0) {
+  setAttendance(dbAtt);
+  localStorage.removeItem('ppnpn_attendance');
+} else if (dbAtt && dbAtt.length === 0 && data.attendance.length > 0) {
+  for (const att of data.attendance) {
+    await upsertAttendanceToSupabase(att);
+  }
+}
 
           // Sync Leaves
           const dbLeaves = await getLeavesFromSupabase();
@@ -768,7 +769,8 @@ if (dbAtt) {
     }
 
     setAttendance(updatedAttendance);
-    saveAttendance(updatedAttendance);
+
+// jangan simpan attendance ke localStorage lagi
     setAbsenModalType(null);
     alert(`Berhasil melakukan Absen ${isMasuk ? 'Masuk' : 'Pulang'}!`);
   };
