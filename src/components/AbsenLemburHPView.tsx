@@ -54,19 +54,37 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
   const [overtimeRecords, setOvertimeRecords] = useState<OvertimeAttendanceRecord[]>([]);
 
   useEffect(() => {
-    const loadRecords = () => {
-      const stored = localStorage.getItem('overtime_attendance_records');
-      if (stored) {
-        try {
-          setOvertimeRecords(JSON.parse(stored));
-        } catch (e) {
-          console.error("Failed to parse overtime records", e);
-        }
-      } else {
-        // Pre-seed realistic records for Maliq or the current user
-        const isReset = localStorage.getItem('app_is_reset') === 'true';
-        const initial: OvertimeAttendanceRecord[] = isReset ? [] : [
-          {
+const loadRecords = async () => {
+  try {
+    const { getOvertimeFromSupabase } = await import("../utils/supabase");
+
+    const records = await getOvertimeFromSupabase();
+
+    if (records && records.length > 0) {
+      setOvertimeRecords(records);
+      localStorage.setItem(
+        "overtime_attendance_records",
+        JSON.stringify(records)
+      );
+      return;
+    }
+  } catch (e) {
+    console.error("Gagal mengambil data dari Supabase:", e);
+  }
+
+  const stored = localStorage.getItem("overtime_attendance_records");
+  if (stored) {
+    try {
+      setOvertimeRecords(JSON.parse(stored));
+      return;
+    } catch (e) {
+      console.error("Failed to parse overtime records", e);
+    }
+  }
+
+  // Pre-seed realistic records for Maliq or the current user
+  const isReset = localStorage.getItem("app_is_reset") === "true";
+  const initial: OvertimeAttendanceRecord[] = isReset ? [] : [
             id: `ov_att_${user.id}_2026-06-25`,
             employeeId: user.id,
             employeeName: user.name,
