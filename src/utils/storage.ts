@@ -340,16 +340,11 @@ export const saveEmployees = (employees: Employee[]) => {
 
 export const saveAttendance = (attendance: Attendance[]) => {
     try {
-        localStorage.setItem(
-            KEYS.ATTENDANCE,
-            JSON.stringify(attendance)
-        );
-    } catch (err) {
-        console.warn(
-            "localStorage penuh, data hanya disimpan di Supabase.",
-            err
-        );
-    }
+        localStorage.removeItem(KEYS.ATTENDANCE);
+    } catch {}
+
+    syncWithGoogleSheets("attendance", attendance);
+};
 
     syncWithGoogleSheets("attendance", attendance);
 };
