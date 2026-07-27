@@ -339,15 +339,10 @@ export const saveEmployees = (employees: Employee[]) => {
 };
 
 export const saveAttendance = (attendance: Attendance[]) => {
-    try {
-        localStorage.removeItem(KEYS.ATTENDANCE);
-    } catch {}
-
-    syncWithGoogleSheets("attendance", attendance);
+  localStorage.setItem(KEYS.ATTENDANCE, JSON.stringify(attendance));
+  syncWithGoogleSheets('attendance', attendance);
 };
 
-    syncWithGoogleSheets("attendance", attendance);
-};
 export const saveLeaves = (leaves: LeaveRequest[]) => {
   const filtered = leaves.filter(l => l.type !== 'Lembur');
   localStorage.setItem(KEYS.LEAVES, JSON.stringify(filtered));
