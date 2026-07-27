@@ -205,10 +205,10 @@ export default function App() {
           }
 
           const dbAtt = await getAttendanceFromSupabase();
-          if (dbAtt && dbAtt.length > 0) {
-            setAttendance(dbAtt);
-            localStorage.setItem('ppnpn_attendance', JSON.stringify(dbAtt));
-          }
+
+if (dbAtt) {
+    setAttendance(dbAtt);
+}
 
           const dbLeaves = await getLeavesFromSupabase();
           if (dbLeaves && dbLeaves.length > 0) {
