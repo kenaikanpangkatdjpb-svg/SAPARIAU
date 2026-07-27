@@ -339,10 +339,20 @@ export const saveEmployees = (employees: Employee[]) => {
 };
 
 export const saveAttendance = (attendance: Attendance[]) => {
-  localStorage.setItem(KEYS.ATTENDANCE, JSON.stringify(attendance));
-  syncWithGoogleSheets('attendance', attendance);
-};
+    try {
+        localStorage.setItem(
+            KEYS.ATTENDANCE,
+            JSON.stringify(attendance)
+        );
+    } catch (err) {
+        console.warn(
+            "localStorage penuh, data hanya disimpan di Supabase.",
+            err
+        );
+    }
 
+    syncWithGoogleSheets("attendance", attendance);
+};
 export const saveLeaves = (leaves: LeaveRequest[]) => {
   const filtered = leaves.filter(l => l.type !== 'Lembur');
   localStorage.setItem(KEYS.LEAVES, JSON.stringify(filtered));
