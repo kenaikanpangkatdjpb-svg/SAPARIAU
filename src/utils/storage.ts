@@ -225,6 +225,68 @@ const KEYS = {
   SETTINGS: 'ppnpn_settings'
 };
 
+/**
+ * Safely saves data to localStorage without throwing QuotaExceededError.
+ * If quota is exceeded, it optimizes/compresses payload (e.g. stripping heavy base64 photos or keeping recent records)
+ * so that local storage caching works gracefully without breaking React app state or Supabase sync loops.
+ */
+export const safeSetLocalStorageItem = (key: string, data: any) => {
+  try {
+    const serialized = typeof data === 'string' ? data : JSON.stringify(data);
+    localStorage.setItem(key, serialized);
+  } catch (e) {
+    console.warn(`[Storage] LocalStorage quota exceeded when saving '${key}'. Optimizing payload...`);
+    try {
+      if (Array.isArray(data)) {
+        // Step 1: Strip heavy Base64 image strings (>10KB) from local cache items
+        const strippedArray = data.map((item: any) => {
+          if (!item || typeof item !== 'object') return item;
+          const copy = { ...item };
+          if (copy.checkInPhoto && typeof copy.checkInPhoto === 'string' && copy.checkInPhoto.length > 10000) {
+            copy.checkInPhoto = '';
+          }
+          if (copy.checkOutPhoto && typeof copy.checkOutPhoto === 'string' && copy.checkOutPhoto.length > 10000) {
+            copy.checkOutPhoto = '';
+          }
+          if (copy.photoUrl && typeof copy.photoUrl === 'string' && copy.photoUrl.length > 10000) {
+            copy.photoUrl = '';
+          }
+          return copy;
+        });
+
+        localStorage.setItem(key, JSON.stringify(strippedArray));
+        return;
+      } else if (data && typeof data === 'object') {
+        const copy = { ...data };
+        if (copy.logoUrl && typeof copy.logoUrl === 'string' && copy.logoUrl.length > 50000) {
+          copy.logoUrl = '';
+        }
+        localStorage.setItem(key, JSON.stringify(copy));
+        return;
+      }
+    } catch (err2) {
+      console.warn(`[Storage] Second attempt failed for '${key}'. Keeping recent 50 records for local cache...`);
+      try {
+        if (Array.isArray(data)) {
+          // Step 2: Keep only recent 50 records stripped of photos
+          const recentStripped = data.slice(-50).map((item: any) => {
+            if (!item || typeof item !== 'object') return item;
+            const copy = { ...item };
+            if (copy.checkInPhoto) copy.checkInPhoto = '';
+            if (copy.checkOutPhoto) copy.checkOutPhoto = '';
+            if (copy.photoUrl) copy.photoUrl = '';
+            return copy;
+          });
+          localStorage.setItem(key, JSON.stringify(recentStripped));
+          return;
+        }
+      } catch (err3) {
+        console.error(`[Storage] Unable to save '${key}' to localStorage due to strict browser quota limits.`, err3);
+      }
+    }
+  }
+};
+
 export const getStoredData = () => {
   const isReset = localStorage.getItem('app_is_reset') === 'true';
 
@@ -247,26 +309,26 @@ export const getStoredData = () => {
     const initialEmployees = isReset
       ? DEFAULT_EMPLOYEES.filter(e => e.role === 'admin')
       : DEFAULT_EMPLOYEES;
-    localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(initialEmployees));
+    safeSetLocalStorageItem(KEYS.EMPLOYEES, initialEmployees);
     employees = JSON.stringify(initialEmployees);
   }
   if (!attendance) {
     const initialAttendance = isReset ? [] : seedAttendance();
-    localStorage.setItem(KEYS.ATTENDANCE, JSON.stringify(initialAttendance));
+    safeSetLocalStorageItem(KEYS.ATTENDANCE, initialAttendance);
     attendance = JSON.stringify(initialAttendance);
   }
   if (!leaves) {
     const initialLeaves = isReset ? [] : DEFAULT_LEAVES;
-    localStorage.setItem(KEYS.LEAVES, JSON.stringify(initialLeaves));
+    safeSetLocalStorageItem(KEYS.LEAVES, initialLeaves);
     leaves = JSON.stringify(initialLeaves);
   }
   if (!logbooks) {
     const initialLogbooks = isReset ? [] : DEFAULT_LOGBOOKS;
-    localStorage.setItem(KEYS.LOGBOOKS, JSON.stringify(initialLogbooks));
+    safeSetLocalStorageItem(KEYS.LOGBOOKS, initialLogbooks);
     logbooks = JSON.stringify(initialLogbooks);
   }
   if (!settings) {
-    localStorage.setItem(KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
+    safeSetLocalStorageItem(KEYS.SETTINGS, DEFAULT_SETTINGS);
     settings = JSON.stringify(DEFAULT_SETTINGS);
   }
 
@@ -322,40 +384,68 @@ export const getStoredData = () => {
     });
   }
 
-  localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(parsedEmployees));
+  safeSetLocalStorageItem(KEYS.EMPLOYEES, parsedEmployees);
+
+  let parsedAttendance: Attendance[] = [];
+  try {
+    parsedAttendance = JSON.parse(attendance) as Attendance[];
+  } catch (e) {
+    parsedAttendance = [];
+  }
+
+  let parsedLeaves: LeaveRequest[] = [];
+  try {
+    parsedLeaves = JSON.parse(leaves) as LeaveRequest[];
+  } catch (e) {
+    parsedLeaves = [];
+  }
+
+  let parsedLogbooks: Logbook[] = [];
+  try {
+    parsedLogbooks = JSON.parse(logbooks) as Logbook[];
+  } catch (e) {
+    parsedLogbooks = [];
+  }
+
+  let parsedSettings: OfficeSettings = DEFAULT_SETTINGS;
+  try {
+    parsedSettings = JSON.parse(settings) as OfficeSettings;
+  } catch (e) {
+    parsedSettings = DEFAULT_SETTINGS;
+  }
 
   return {
     employees: parsedEmployees,
-    attendance: JSON.parse(attendance) as Attendance[],
-    leaves: JSON.parse(leaves) as LeaveRequest[],
-    logbooks: JSON.parse(logbooks) as Logbook[],
-    settings: JSON.parse(settings) as OfficeSettings
+    attendance: parsedAttendance,
+    leaves: parsedLeaves,
+    logbooks: parsedLogbooks,
+    settings: parsedSettings
   };
 };
 
 export const saveEmployees = (employees: Employee[]) => {
-  localStorage.setItem(KEYS.EMPLOYEES, JSON.stringify(employees));
+  safeSetLocalStorageItem(KEYS.EMPLOYEES, employees);
   syncWithGoogleSheets('employees', employees);
 };
 
 export const saveAttendance = (attendance: Attendance[]) => {
-  localStorage.setItem(KEYS.ATTENDANCE, JSON.stringify(attendance));
+  safeSetLocalStorageItem(KEYS.ATTENDANCE, attendance);
   syncWithGoogleSheets('attendance', attendance);
 };
 
 export const saveLeaves = (leaves: LeaveRequest[]) => {
   const filtered = leaves.filter(l => l.type !== 'Lembur');
-  localStorage.setItem(KEYS.LEAVES, JSON.stringify(filtered));
+  safeSetLocalStorageItem(KEYS.LEAVES, filtered);
   syncWithGoogleSheets('leaves', leaves);
 };
 
 export const saveLogbooks = (logbooks: Logbook[]) => {
-  localStorage.setItem(KEYS.LOGBOOKS, JSON.stringify(logbooks));
+  safeSetLocalStorageItem(KEYS.LOGBOOKS, logbooks);
   syncWithGoogleSheets('logbooks', logbooks);
 };
 
 export const saveSettings = (settings: OfficeSettings) => {
-  localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
+  safeSetLocalStorageItem(KEYS.SETTINGS, settings);
   syncWithGoogleSheets('settings', settings);
 };
 
