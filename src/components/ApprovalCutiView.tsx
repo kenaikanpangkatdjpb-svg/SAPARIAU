@@ -23,6 +23,40 @@ const ensureHtml2Pdf = (): Promise<any> => {
   });
 };
 
+const getSanitizedCssString = (): string => {
+  let cssText = '';
+
+  // 1. Extract rules from active document styleSheets (including compiled production bundles like on Vercel)
+  try {
+    Array.from(document.styleSheets).forEach((sheet) => {
+      try {
+        const rules = Array.from(sheet.cssRules || sheet.rules || []);
+        rules.forEach((r) => {
+          cssText += r.cssText + '\n';
+        });
+      } catch (e) {
+        // Cross-origin fallback ignore
+      }
+    });
+  } catch (err) {
+    console.warn("[PDF] Error reading document styleSheets:", err);
+  }
+
+  // 2. Extract text from inline <style> tags
+  document.querySelectorAll('style').forEach((s) => {
+    if (s.textContent) {
+      cssText += s.textContent + '\n';
+    }
+  });
+
+  // 3. Convert modern CSS / Tailwind v4 unsupported color functions to standard hex colors
+  return cssText
+    .replace(/oklch\([^)]+\)/gi, '#1e293b')
+    .replace(/oklab\([^)]+\)/gi, '#1e293b')
+    .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
+    .replace(/lab\([^)]+\)/gi, '#334155');
+};
+
 export const triggerPdfDownload = async (element: HTMLElement, filename: string) => {
   if (!element) return;
   const html2pdf = await ensureHtml2Pdf();
@@ -42,19 +76,18 @@ export const triggerPdfDownload = async (element: HTMLElement, filename: string)
       scrollX: 0,
       scrollY: 0,
       onclone: (clonedDoc: Document) => {
-        // 1. Sanitize all <style> tags to eliminate oklch/oklab/color-mix color parser crashes in html2canvas
-        const styleEls = clonedDoc.querySelectorAll('style');
-        styleEls.forEach((style) => {
-          if (style.textContent) {
-            style.textContent = style.textContent
-              .replace(/oklch\([^)]+\)/gi, '#1e293b')
-              .replace(/oklab\([^)]+\)/gi, '#1e293b')
-              .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
-              .replace(/lab\([^)]+\)/gi, '#334155');
-          }
-        });
+        // 1. Remove all existing external <link> stylesheets & <style> tags in clonedDoc
+        // to prevent html2canvas from reading raw/unsanitized production CSS files (e.g., index-BZ8_x-kN.css)
+        const existingLinksAndStyles = clonedDoc.querySelectorAll('link[rel="stylesheet"], style');
+        existingLinksAndStyles.forEach((node) => node.remove());
 
-        // 2. Sanitize inline style attributes on cloned elements
+        // 2. Inject single pre-sanitized CSS stylesheet where oklch/oklab/color-mix functions are stripped
+        const sanitizedCss = getSanitizedCssString();
+        const cleanStyleTag = clonedDoc.createElement('style');
+        cleanStyleTag.textContent = sanitizedCss;
+        clonedDoc.head.appendChild(cleanStyleTag);
+
+        // 3. Sanitize inline style attributes on cloned elements
         const allElements = clonedDoc.querySelectorAll('*');
         allElements.forEach((el) => {
           const styleAttr = el.getAttribute('style');
@@ -68,7 +101,7 @@ export const triggerPdfDownload = async (element: HTMLElement, filename: string)
           }
         });
 
-        // 3. Find the cloned target element and ensure its container hierarchy is fully expanded and unconstrained
+        // 4. Find the cloned target element and ensure its container hierarchy is fully expanded and unconstrained
         const clonedTarget = (clonedDoc.getElementById(targetId) || clonedDoc.querySelector('#' + targetId)) as HTMLElement | null;
         if (clonedTarget) {
           clonedTarget.style.boxShadow = 'none';
@@ -137,18 +170,7 @@ export const triggerPrint = async (elementId: string, documentTitle: string = 'D
       existingFrame.remove();
     }
 
-    let styleTags = '';
-    document.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => {
-      let cssText = node.outerHTML;
-      if (cssText) {
-        cssText = cssText
-          .replace(/oklch\([^)]+\)/gi, '#1e293b')
-          .replace(/oklab\([^)]+\)/gi, '#1e293b')
-          .replace(/color-mix\([^)]+\)/gi, '#cbd5e1')
-          .replace(/lab\([^)]+\)/gi, '#334155');
-      }
-      styleTags += cssText;
-    });
+    const sanitizedStyleCss = getSanitizedCssString();
 
     const iframe = document.createElement('iframe');
     iframe.id = 'active-print-iframe';
@@ -186,7 +208,7 @@ export const triggerPrint = async (elementId: string, documentTitle: string = 'D
         <head>
           <meta charset="utf-8" />
           <title>${documentTitle}</title>
-          ${styleTags}
+          <style>${sanitizedStyleCss}</style>
           <style>
             @page { size: A4 portrait; margin: 10mm 12mm !important; }
             *, *::before, *::after { box-sizing: border-box !important; }
