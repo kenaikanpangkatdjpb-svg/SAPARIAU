@@ -85,6 +85,7 @@ const loadRecords = async () => {
   // Pre-seed realistic records for Maliq or the current user
   const isReset = localStorage.getItem("app_is_reset") === "true";
   const initial: OvertimeAttendanceRecord[] = isReset ? [] : [
+     {
             id: `ov_att_${user.id}_2026-06-25`,
             employeeId: user.id,
             employeeName: user.name,
