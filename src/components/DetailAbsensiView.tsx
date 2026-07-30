@@ -52,9 +52,19 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
   const employeeAttendance = useMemo(() => {
     let list = attendance;
     if (selectedEmpId === 'all') {
-      list = list.filter(att => employees.some(e => e.id === att.employeeId && e.role === 'karyawan'));
+      list = list.filter(att => 
+        employees.some(e => 
+          (e.id.toLowerCase() === att.employeeId?.toLowerCase() || 
+           (e.name && att.employeeName && att.employeeName.toLowerCase().includes(e.name.toLowerCase()))) && 
+          e.role === 'karyawan'
+        ) || att.employeeName
+      );
     } else {
-      list = list.filter(att => att.employeeId === selectedEmployee.id);
+      list = list.filter(att => 
+        att.employeeId?.toLowerCase() === selectedEmployee.id?.toLowerCase() ||
+        (att.employeeName && selectedEmployee.name && att.employeeName.toLowerCase().includes(selectedEmployee.name.toLowerCase())) ||
+        (selectedEmployee.id && att.employeeId && att.employeeId.toLowerCase().includes(selectedEmployee.id.toLowerCase()))
+      );
     }
 
     if (filterDate) {
