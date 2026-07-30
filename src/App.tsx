@@ -414,14 +414,30 @@ export default function App() {
 
   const todayAttendance = useMemo(() => {
     if (!currentUser) return null;
-    const standard = attendance.find(att => att.employeeId === currentUser.id && att.date === todayDateStr) || null;
 
+    const isMatch = (att: Attendance) => 
+      att.employeeId?.toLowerCase() === currentUser.id.toLowerCase() ||
+      (att.employeeName && currentUser.name && att.employeeName.toLowerCase().includes(currentUser.name.toLowerCase()));
+
+    const standard = attendance.find(att => isMatch(att) && att.date === todayDateStr) || null;
     if (standard) return standard;
 
     // Check if user has an open check-in record (checkIn exists, checkOut is null) from yesterday / recent shift
-    const openRecord = attendance.find(att => att.employeeId === currentUser.id && att.checkIn && !att.checkOut);
+    const openRecord = attendance.find(att => isMatch(att) && att.checkIn && !att.checkOut);
     if (openRecord) {
       return openRecord;
+    }
+
+    // Check if user has any record today
+    const anyToday = attendance.find(att => isMatch(att) && att.date === todayDateStr);
+    if (anyToday) {
+      return anyToday;
+    }
+
+    // Check if user has any recent record overall
+    const latest = attendance.filter(isMatch).sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (latest && (latest.date === todayDateStr || !latest.checkOut)) {
+      return latest;
     }
 
     return null;
@@ -709,9 +725,13 @@ export default function App() {
     let updatedAttendance = [...attendance];
     const isMasuk = attendanceData.checkIn !== undefined && attendanceData.checkIn !== null;
     const targetDate = attendanceData.date || todayDateStr;
-    
+
+    const isUserMatch = (att: Attendance) => 
+      att.employeeId?.toLowerCase() === currentUser.id.toLowerCase() ||
+      (att.employeeName && currentUser.name && att.employeeName.toLowerCase().includes(currentUser.name.toLowerCase()));
+
     if (isMasuk) {
-      const existingIdx = updatedAttendance.findIndex(att => att.employeeId === currentUser.id && att.date === targetDate);
+      const existingIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.date === targetDate);
       let newRecord: Attendance;
 
       if (existingIdx !== -1) {
@@ -759,16 +779,16 @@ export default function App() {
       let finalRec: Attendance | null = null;
 
       // 1. Try to match by date specified in attendanceData.date
-      let matchedIdx = updatedAttendance.findIndex(att => att.employeeId === currentUser.id && att.date === targetDate);
+      let matchedIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.date === targetDate);
 
       // 2. If not matched, try to match an OPEN checkIn for currentUser (e.g. overnight/security shift or previous day)
       if (matchedIdx === -1) {
-        matchedIdx = updatedAttendance.findIndex(att => att.employeeId === currentUser.id && att.checkIn && !att.checkOut);
+        matchedIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.checkIn && !att.checkOut);
       }
 
       // 3. If still not matched, try to match any record for currentUser on today's date
       if (matchedIdx === -1) {
-        matchedIdx = updatedAttendance.findIndex(att => att.employeeId === currentUser.id && att.date === todayDateStr);
+        matchedIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.date === todayDateStr);
       }
 
       if (matchedIdx !== -1) {
