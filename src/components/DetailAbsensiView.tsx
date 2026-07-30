@@ -184,7 +184,7 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
                           ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
                           : 'bg-amber-50 text-amber-600 border-amber-100'
                       }`}>
-                        {att.checkInStatus}
+                        {att.checkInStatus || 'Clock Out'}
                       </span>
                       {isAdmin && onResetAttendance && (
                         <button

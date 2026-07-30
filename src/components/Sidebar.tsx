@@ -23,6 +23,7 @@ import {
   FileSpreadsheet,
   Image,
   RefreshCw,
+  HardDrive,
   X
 } from 'lucide-react';
 import { Employee } from '../types';
@@ -83,6 +84,7 @@ export default function Sidebar({
     { id: 'kop-logo', name: 'KOP & Logo', icon: Image },
     { id: 'ganti-password', name: 'Ganti Password', icon: Key },
     { id: 'generate-cuti', name: 'Setting Cuti PPNPN', icon: CalendarCheck },
+    { id: 'backup-restore', name: 'Backup & Restore Data', icon: HardDrive },
     { id: 'reset-aplikasi', name: 'Reset Data Aplikasi', icon: RefreshCw },
   ];
 
