@@ -55,6 +55,17 @@ const DEFAULT_EMPLOYEES: Employee[] = [
     joinDate: "2022-03-15",
     cutiQuota: 12,
     status: "pindah"
+  },
+  {
+    id: "robby",
+    name: "ROBBY ANDAYANI",
+    email: "robby@ppnpn.com",
+    role: "karyawan",
+    password: "password123",
+    position: "Security / Petugas Keamanan",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
   }
 ];
 
@@ -367,6 +378,20 @@ export const getStoredData = () => {
       joinDate: "2022-03-15",
       cutiQuota: 12,
       status: "pindah"
+    });
+  }
+
+  if (!parsedEmployees.some(e => e.name.toLowerCase().includes('robby'))) {
+    parsedEmployees.push({
+      id: "robby",
+      name: "ROBBY ANDAYANI",
+      email: "robby@ppnpn.com",
+      role: "karyawan",
+      password: "password123",
+      position: "Security / Petugas Keamanan",
+      joinDate: "2024-01-01",
+      cutiQuota: 12,
+      status: "aktif"
     });
   }
 
