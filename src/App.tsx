@@ -42,6 +42,7 @@ import MonitoringHasilApprovalView from './components/MonitoringHasilApprovalVie
 import RekapitulasiSpklView from './components/RekapitulasiSpklView';
 import KopLogoSettingsView from './components/KopLogoSettingsView';
 import RekomendasiKIView from './components/RekomendasiKIView';
+import BackupRestoreView from './components/BackupRestoreView';
 
 // Extra Evaluation Views to match the requested image perfectly
 import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle, Users, PlusSquare } from 'lucide-react';
@@ -415,25 +416,15 @@ export default function App() {
     if (!currentUser) return null;
     const standard = attendance.find(att => att.employeeId === currentUser.id && att.date === todayDateStr) || null;
 
-    const isSecurity = !!(currentUser.position?.toLowerCase()?.includes('satpam') || 
-                       currentUser.position?.toLowerCase()?.includes('security') || 
-                       currentUser.position?.toLowerCase()?.includes('keamanan') || 
-                       currentUser.position?.toLowerCase()?.includes('penjaga'));
+    if (standard) return standard;
 
-    if (isSecurity && !standard) {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yestYear = yesterday.getFullYear();
-      const yestMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
-      const yestDay = String(yesterday.getDate()).padStart(2, '0');
-      const yestDateStr = `${yestYear}-${yestMonth}-${yestDay}`;
-
-      const yesterdayRecord = attendance.find(att => att.employeeId === currentUser.id && att.date === yestDateStr);
-      if (yesterdayRecord && yesterdayRecord.checkIn && !yesterdayRecord.checkOut) {
-        return yesterdayRecord;
-      }
+    // Check if user has an open check-in record (checkIn exists, checkOut is null) from yesterday / recent shift
+    const openRecord = attendance.find(att => att.employeeId === currentUser.id && att.checkIn && !att.checkOut);
+    if (openRecord) {
+      return openRecord;
     }
-    return standard;
+
+    return null;
   }, [attendance, currentUser, todayDateStr]);
 
   // Auth actions
@@ -717,27 +708,46 @@ export default function App() {
 
     let updatedAttendance = [...attendance];
     const isMasuk = attendanceData.checkIn !== undefined && attendanceData.checkIn !== null;
+    const targetDate = attendanceData.date || todayDateStr;
     
     if (isMasuk) {
-      const newRecord: Attendance = {
-        id: `att_${currentUser.id}_${attendanceData.date}`,
-        employeeId: currentUser.id,
-        employeeName: currentUser.name,
-        date: attendanceData.date!,
-        checkIn: attendanceData.checkIn!,
-        checkOut: null,
-        checkInPhoto: attendanceData.checkInPhoto!,
-        checkOutPhoto: null,
-        checkInLocation: attendanceData.checkInLocation!,
-        checkOutLocation: null,
-        checkInAddress: attendanceData.checkInAddress!,
-        checkOutAddress: null,
-        checkInStatus: attendanceData.checkInStatus!,
-        checkOutStatus: null,
-        logbookNotes: attendanceData.logbookNotes,
-        shift: attendanceData.shift
-      };
-      updatedAttendance.push(newRecord);
+      const existingIdx = updatedAttendance.findIndex(att => att.employeeId === currentUser.id && att.date === targetDate);
+      let newRecord: Attendance;
+
+      if (existingIdx !== -1) {
+        newRecord = {
+          ...updatedAttendance[existingIdx],
+          checkIn: attendanceData.checkIn!,
+          checkInPhoto: attendanceData.checkInPhoto!,
+          checkInLocation: attendanceData.checkInLocation!,
+          checkInAddress: attendanceData.checkInAddress!,
+          checkInStatus: attendanceData.checkInStatus!,
+          logbookNotes: attendanceData.logbookNotes || updatedAttendance[existingIdx].logbookNotes,
+          shift: attendanceData.shift || updatedAttendance[existingIdx].shift
+        };
+        updatedAttendance[existingIdx] = newRecord;
+      } else {
+        newRecord = {
+          id: `att_${currentUser.id}_${targetDate}`,
+          employeeId: currentUser.id,
+          employeeName: currentUser.name,
+          date: targetDate,
+          checkIn: attendanceData.checkIn!,
+          checkOut: null,
+          checkInPhoto: attendanceData.checkInPhoto!,
+          checkOutPhoto: null,
+          checkInLocation: attendanceData.checkInLocation!,
+          checkOutLocation: null,
+          checkInAddress: attendanceData.checkInAddress!,
+          checkOutAddress: null,
+          checkInStatus: attendanceData.checkInStatus!,
+          checkOutStatus: null,
+          logbookNotes: attendanceData.logbookNotes,
+          shift: attendanceData.shift
+        };
+        updatedAttendance.push(newRecord);
+      }
+
       upsertAttendanceToSupabase(newRecord);
 
       // If logbook note is added inside Check-In modal, push to Logbook lists
@@ -747,21 +757,52 @@ export default function App() {
     } else {
       // update checkOut data
       let finalRec: Attendance | null = null;
-      updatedAttendance = updatedAttendance.map(att => {
-        if (att.employeeId === currentUser.id && att.date === attendanceData.date) {
-          const rec = {
-            ...att,
-            checkOut: attendanceData.checkOut!,
-            checkOutPhoto: attendanceData.checkOutPhoto!,
-            checkOutLocation: attendanceData.checkOutLocation!,
-            checkOutAddress: attendanceData.checkOutAddress!,
-            checkOutStatus: 'Tepat Waktu' as const
-          };
-          finalRec = rec;
-          return rec;
-        }
-        return att;
-      });
+
+      // 1. Try to match by date specified in attendanceData.date
+      let matchedIdx = updatedAttendance.findIndex(att => att.employeeId === currentUser.id && att.date === targetDate);
+
+      // 2. If not matched, try to match an OPEN checkIn for currentUser (e.g. overnight/security shift or previous day)
+      if (matchedIdx === -1) {
+        matchedIdx = updatedAttendance.findIndex(att => att.employeeId === currentUser.id && att.checkIn && !att.checkOut);
+      }
+
+      // 3. If still not matched, try to match any record for currentUser on today's date
+      if (matchedIdx === -1) {
+        matchedIdx = updatedAttendance.findIndex(att => att.employeeId === currentUser.id && att.date === todayDateStr);
+      }
+
+      if (matchedIdx !== -1) {
+        finalRec = {
+          ...updatedAttendance[matchedIdx],
+          checkOut: attendanceData.checkOut!,
+          checkOutPhoto: attendanceData.checkOutPhoto!,
+          checkOutLocation: attendanceData.checkOutLocation!,
+          checkOutAddress: attendanceData.checkOutAddress!,
+          checkOutStatus: 'Tepat Waktu' as const
+        };
+        updatedAttendance[matchedIdx] = finalRec;
+      } else {
+        // 4. NO EXISTING RECORD FOUND at all! Create a new record for today so the clock-out is GUARANTEED to be recorded!
+        finalRec = {
+          id: `att_${currentUser.id}_${targetDate}`,
+          employeeId: currentUser.id,
+          employeeName: currentUser.name,
+          date: targetDate,
+          checkIn: null,
+          checkOut: attendanceData.checkOut!,
+          checkInPhoto: null,
+          checkOutPhoto: attendanceData.checkOutPhoto!,
+          checkInLocation: null,
+          checkOutLocation: attendanceData.checkOutLocation!,
+          checkInAddress: null,
+          checkOutAddress: attendanceData.checkOutAddress!,
+          checkInStatus: null,
+          checkOutStatus: 'Tepat Waktu' as const,
+          shift: attendanceData.shift
+        };
+        updatedAttendance.push(finalRec);
+      }
+
       if (finalRec) {
         upsertAttendanceToSupabase(finalRec);
       }
@@ -796,6 +837,132 @@ export default function App() {
     saveEmployees(updatedEmployees);
     setCurrentUser({ ...currentUser, password: updated });
     return true;
+  };
+
+  // Handle Full System Restore
+  const handleRestoreData = async (backupPackage: any, mode: 'overwrite' | 'merge') => {
+    if (!backupPackage) return;
+
+    let targetEmployees: Employee[] = [];
+    let targetAttendance: Attendance[] = [];
+    let targetLeaves: LeaveRequest[] = [];
+    let targetLogbooks: Logbook[] = [];
+    let targetSettings: OfficeSettings = settings;
+
+    if (mode === 'overwrite') {
+      targetEmployees = Array.isArray(backupPackage.employees) ? backupPackage.employees : employees;
+      targetAttendance = Array.isArray(backupPackage.attendance) ? backupPackage.attendance : attendance;
+      targetLeaves = Array.isArray(backupPackage.leaves) ? backupPackage.leaves : leaves;
+      targetLogbooks = Array.isArray(backupPackage.logbooks) ? backupPackage.logbooks : logbooks;
+      if (backupPackage.settings && typeof backupPackage.settings === 'object') {
+        targetSettings = backupPackage.settings;
+      }
+    } else {
+      // MERGE MODE
+      const empMap = new Map<string, Employee>();
+      employees.forEach(e => empMap.set(e.id, e));
+      if (Array.isArray(backupPackage.employees)) {
+        backupPackage.employees.forEach((e: Employee) => empMap.set(e.id, e));
+      }
+      targetEmployees = Array.from(empMap.values());
+
+      const attMap = new Map<string, Attendance>();
+      attendance.forEach(a => attMap.set(a.id, a));
+      if (Array.isArray(backupPackage.attendance)) {
+        backupPackage.attendance.forEach((a: Attendance) => attMap.set(a.id, a));
+      }
+      targetAttendance = Array.from(attMap.values());
+
+      const leaveMap = new Map<string, LeaveRequest>();
+      leaves.forEach(l => leaveMap.set(l.id, l));
+      if (Array.isArray(backupPackage.leaves)) {
+        backupPackage.leaves.forEach((l: LeaveRequest) => leaveMap.set(l.id, l));
+      }
+      targetLeaves = Array.from(leaveMap.values());
+
+      const logMap = new Map<string, Logbook>();
+      logbooks.forEach(l => logMap.set(l.id, l));
+      if (Array.isArray(backupPackage.logbooks)) {
+        backupPackage.logbooks.forEach((l: Logbook) => logMap.set(l.id, l));
+      }
+      targetLogbooks = Array.from(logMap.values());
+
+      if (backupPackage.settings && typeof backupPackage.settings === 'object') {
+        targetSettings = { ...settings, ...backupPackage.settings };
+      }
+    }
+
+    // 1. Update React state
+    setEmployees(targetEmployees);
+    setAttendance(targetAttendance);
+    setLeaves(targetLeaves);
+    setLogbooks(targetLogbooks);
+    setSettings(targetSettings);
+
+    // 2. Save to localStorage
+    saveEmployees(targetEmployees);
+    saveAttendance(targetAttendance);
+    saveLeaves(targetLeaves);
+    saveLogbooks(targetLogbooks);
+    saveSettings(targetSettings);
+
+    if (backupPackage.kopSettings) {
+      safeSetLocalStorageItem('kop_settings', backupPackage.kopSettings);
+      window.dispatchEvent(new Event('kop_settings_changed'));
+    }
+
+    if (Array.isArray(backupPackage.overtimeAttendanceRecords)) {
+      if (mode === 'overwrite') {
+        safeSetLocalStorageItem('overtime_attendance_records', backupPackage.overtimeAttendanceRecords);
+      } else {
+        let existingOt: any[] = [];
+        try {
+          const stored = localStorage.getItem('overtime_attendance_records');
+          if (stored) existingOt = JSON.parse(stored);
+        } catch (e) {}
+        const otMap = new Map<string, any>();
+        existingOt.forEach(o => otMap.set(o.id, o));
+        backupPackage.overtimeAttendanceRecords.forEach((o: any) => otMap.set(o.id, o));
+        safeSetLocalStorageItem('overtime_attendance_records', Array.from(otMap.values()));
+      }
+    }
+
+    if (backupPackage.overtimeRequests && typeof backupPackage.overtimeRequests === 'object') {
+      Object.keys(backupPackage.overtimeRequests).forEach(key => {
+        safeSetLocalStorageItem(key, backupPackage.overtimeRequests[key]);
+      });
+    }
+
+    if (Array.isArray(backupPackage.kepatuhanInternalFindings)) {
+      safeSetLocalStorageItem('kepatuhan_internal_findings', backupPackage.kepatuhanInternalFindings);
+    }
+
+    localStorage.removeItem('app_is_reset');
+
+    // 3. Sync with Supabase Cloud if connected
+    if (supabaseConnected) {
+      try {
+        for (const emp of targetEmployees) {
+          await upsertEmployeeToSupabase(emp);
+        }
+        for (const att of targetAttendance) {
+          await upsertAttendanceToSupabase(att);
+        }
+        for (const l of targetLeaves) {
+          await upsertLeaveToSupabase(l);
+        }
+        for (const lb of targetLogbooks) {
+          await upsertLogbookToSupabase(lb);
+        }
+        if (targetSettings) {
+          await upsertSettingsToSupabase(targetSettings);
+        }
+      } catch (err) {
+        console.warn("Supabase restore sync warning", err);
+      }
+    }
+
+    window.dispatchEvent(new Event('storage'));
   };
 
   // Render evaluation & extra setting pages (Rapor, Perilaku, etc.)
@@ -1139,6 +1306,20 @@ export default function App() {
               </div>
             </div>
           </div>
+        );
+      case 'backup-restore':
+        return (
+          <BackupRestoreView
+            user={currentUser!}
+            employees={employees}
+            attendance={attendance}
+            leaves={leaves}
+            logbooks={logbooks}
+            settings={settings}
+            supabaseConnected={supabaseConnected}
+            isSyncingSupabase={isSyncingSupabase}
+            onRestoreData={handleRestoreData}
+          />
         );
       case 'reset-aplikasi':
         const handleResetNow = async () => {
