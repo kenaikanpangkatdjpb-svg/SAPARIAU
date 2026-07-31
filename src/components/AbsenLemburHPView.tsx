@@ -64,7 +64,7 @@ export default function AbsenLemburHPView({ user, settings, attendance, onSaveAt
         }
       } else {
         // Pre-seed realistic records for Maliq or the current user
-        const isReset = localStorage.getItem('app_is_reset') === 'true';
+        const isReset = localStorage.getItem('app_is_reset') === 'true' || localStorage.getItem('app_is_reset_lembur') === 'true';
         const initial: OvertimeAttendanceRecord[] = isReset ? [] : [
           {
             id: `ov_att_${user.id}_2026-06-25`,

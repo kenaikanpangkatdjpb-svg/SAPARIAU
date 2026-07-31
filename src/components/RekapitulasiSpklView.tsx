@@ -116,7 +116,7 @@ export default function RekapitulasiSpklView({
 
     // Seed defaults if no requests are found anywhere
     if (allReqs.length === 0) {
-      const isReset = localStorage.getItem('app_is_reset') === 'true';
+      const isReset = localStorage.getItem('app_is_reset') === 'true' || localStorage.getItem('app_is_reset_lembur') === 'true';
       if (isReset) {
         setRequests([]);
         setSelectedIds([]);
