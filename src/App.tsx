@@ -43,6 +43,7 @@ import RekapitulasiSpklView from './components/RekapitulasiSpklView';
 import KopLogoSettingsView from './components/KopLogoSettingsView';
 import RekomendasiKIView from './components/RekomendasiKIView';
 import BackupRestoreView from './components/BackupRestoreView';
+import ResetDataView from './components/ResetDataView';
 
 // Extra Evaluation Views to match the requested image perfectly
 import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle, Users, PlusSquare } from 'lucide-react';
@@ -114,8 +115,17 @@ export default function App() {
           // Sync Employees
           const dbEmps = await getEmployeesFromSupabase();
           if (dbEmps && dbEmps.length > 0) {
-            setEmployees(dbEmps);
-            safeSetLocalStorageItem('ppnpn_employees', dbEmps);
+            const empMap = new Map<string, Employee>();
+            data.employees.forEach(e => empMap.set(e.id.toLowerCase(), e));
+            dbEmps.forEach(e => empMap.set(e.id.toLowerCase(), e));
+            const mergedEmps = Array.from(empMap.values());
+            setEmployees(mergedEmps);
+            safeSetLocalStorageItem('ppnpn_employees', mergedEmps);
+            for (const emp of mergedEmps) {
+              if (!dbEmps.some(d => d.id.toLowerCase() === emp.id.toLowerCase())) {
+                await upsertEmployeeToSupabase(emp);
+              }
+            }
           } else if (dbEmps && dbEmps.length === 0 && data.employees.length > 0) {
             for (const emp of data.employees) {
               await upsertEmployeeToSupabase(emp);
@@ -124,12 +134,48 @@ export default function App() {
 
           // Sync Regular Attendance
           const dbAtt = await getAttendanceFromSupabase();
-          if (dbAtt && dbAtt.length > 0) {
-            setAttendance(dbAtt);
-            safeSetLocalStorageItem('ppnpn_attendance', dbAtt);
-          } else if (dbAtt && dbAtt.length === 0 && data.attendance.length > 0) {
-            for (const att of data.attendance) {
-              await upsertAttendanceToSupabase(att);
+          if (dbAtt) {
+            const attMap = new Map<string, Attendance>();
+            const getAttKey = (att: Attendance) => {
+              const empKey = (att.employeeId || att.employeeName || 'unknown').toLowerCase();
+              return `${empKey}_${att.date}`;
+            };
+
+            data.attendance.forEach(att => attMap.set(getAttKey(att), { ...att }));
+
+            dbAtt.forEach(att => {
+              const key = getAttKey(att);
+              const existing = attMap.get(key);
+              if (!existing) {
+                attMap.set(key, { ...att });
+              } else {
+                attMap.set(key, {
+                  ...existing,
+                  ...att,
+                  checkIn: att.checkIn || existing.checkIn,
+                  checkInPhoto: att.checkInPhoto || existing.checkInPhoto,
+                  checkInLocation: att.checkInLocation || existing.checkInLocation,
+                  checkInAddress: att.checkInAddress || existing.checkInAddress,
+                  checkInStatus: att.checkInStatus || existing.checkInStatus,
+                  checkOut: att.checkOut || existing.checkOut,
+                  checkOutPhoto: att.checkOutPhoto || existing.checkOutPhoto,
+                  checkOutLocation: att.checkOutLocation || existing.checkOutLocation,
+                  checkOutAddress: att.checkOutAddress || existing.checkOutAddress,
+                  checkOutStatus: att.checkOutStatus || existing.checkOutStatus,
+                  logbookNotes: att.logbookNotes || existing.logbookNotes,
+                  shift: att.shift || existing.shift
+                });
+              }
+            });
+
+            const mergedAttendance = Array.from(attMap.values());
+            setAttendance(mergedAttendance);
+            safeSetLocalStorageItem('ppnpn_attendance', mergedAttendance);
+
+            for (const att of mergedAttendance) {
+              if (!dbAtt.some(d => (d.employeeId?.toLowerCase() === att.employeeId?.toLowerCase() || d.id === att.id) && d.date === att.date)) {
+                await upsertAttendanceToSupabase(att);
+              }
             }
           }
 
@@ -206,20 +252,20 @@ export default function App() {
           }
 
           const dbAtt = await getAttendanceFromSupabase();
-          if (dbAtt && dbAtt.length > 0) {
+          if (dbAtt !== null) {
             setAttendance(dbAtt);
             safeSetLocalStorageItem('ppnpn_attendance', dbAtt);
           }
 
           const dbLeaves = await getLeavesFromSupabase();
-          if (dbLeaves && dbLeaves.length > 0) {
+          if (dbLeaves !== null) {
             setLeaves(dbLeaves);
             const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
             safeSetLocalStorageItem('ppnpn_leaves', filteredLeaves);
           }
 
           const dbLogs = await getLogbooksFromSupabase();
-          if (dbLogs && dbLogs.length > 0) {
+          if (dbLogs !== null) {
             setLogbooks(dbLogs);
             safeSetLocalStorageItem('ppnpn_logbooks', dbLogs);
           }
@@ -719,7 +765,7 @@ export default function App() {
   };
 
   // Attendance actions
-  const handleAttendanceSubmit = (attendanceData: Partial<Attendance>) => {
+  const handleAttendanceSubmit = async (attendanceData: Partial<Attendance>) => {
     if (!currentUser) return;
 
     let updatedAttendance = [...attendance];
@@ -730,12 +776,13 @@ export default function App() {
       att.employeeId?.toLowerCase() === currentUser.id.toLowerCase() ||
       (att.employeeName && currentUser.name && att.employeeName.toLowerCase().includes(currentUser.name.toLowerCase()));
 
+    let recordToSave: Attendance | null = null;
+
     if (isMasuk) {
       const existingIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.date === targetDate);
-      let newRecord: Attendance;
 
       if (existingIdx !== -1) {
-        newRecord = {
+        recordToSave = {
           ...updatedAttendance[existingIdx],
           checkIn: attendanceData.checkIn!,
           checkInPhoto: attendanceData.checkInPhoto!,
@@ -745,9 +792,9 @@ export default function App() {
           logbookNotes: attendanceData.logbookNotes || updatedAttendance[existingIdx].logbookNotes,
           shift: attendanceData.shift || updatedAttendance[existingIdx].shift
         };
-        updatedAttendance[existingIdx] = newRecord;
+        updatedAttendance[existingIdx] = recordToSave;
       } else {
-        newRecord = {
+        recordToSave = {
           id: `att_${currentUser.id}_${targetDate}`,
           employeeId: currentUser.id,
           employeeName: currentUser.name,
@@ -765,10 +812,8 @@ export default function App() {
           logbookNotes: attendanceData.logbookNotes,
           shift: attendanceData.shift
         };
-        updatedAttendance.push(newRecord);
+        updatedAttendance.push(recordToSave);
       }
-
-      upsertAttendanceToSupabase(newRecord);
 
       // If logbook note is added inside Check-In modal, push to Logbook lists
       if (attendanceData.logbookNotes) {
@@ -776,8 +821,6 @@ export default function App() {
       }
     } else {
       // update checkOut data
-      let finalRec: Attendance | null = null;
-
       // 1. Try to match by date specified in attendanceData.date
       let matchedIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.date === targetDate);
 
@@ -792,7 +835,7 @@ export default function App() {
       }
 
       if (matchedIdx !== -1) {
-        finalRec = {
+        recordToSave = {
           ...updatedAttendance[matchedIdx],
           checkOut: attendanceData.checkOut!,
           checkOutPhoto: attendanceData.checkOutPhoto!,
@@ -800,10 +843,10 @@ export default function App() {
           checkOutAddress: attendanceData.checkOutAddress!,
           checkOutStatus: 'Tepat Waktu' as const
         };
-        updatedAttendance[matchedIdx] = finalRec;
+        updatedAttendance[matchedIdx] = recordToSave;
       } else {
         // 4. NO EXISTING RECORD FOUND at all! Create a new record for today so the clock-out is GUARANTEED to be recorded!
-        finalRec = {
+        recordToSave = {
           id: `att_${currentUser.id}_${targetDate}`,
           employeeId: currentUser.id,
           employeeName: currentUser.name,
@@ -820,16 +863,17 @@ export default function App() {
           checkOutStatus: 'Tepat Waktu' as const,
           shift: attendanceData.shift
         };
-        updatedAttendance.push(finalRec);
-      }
-
-      if (finalRec) {
-        upsertAttendanceToSupabase(finalRec);
+        updatedAttendance.push(recordToSave);
       }
     }
 
     setAttendance(updatedAttendance);
     saveAttendance(updatedAttendance);
+
+    if (recordToSave) {
+      await upsertAttendanceToSupabase(recordToSave);
+    }
+
     setAbsenModalType(null);
     alert(`Berhasil melakukan Absen ${isMasuk ? 'Masuk' : 'Pulang'}!`);
   };
@@ -1135,9 +1179,12 @@ export default function App() {
             user={currentUser!}
             settings={settings}
             attendance={attendance}
-            onSaveAttendance={(updated) => {
+            onSaveAttendance={async (updated) => {
               setAttendance(updated);
               saveAttendance(updated);
+              for (const att of updated) {
+                await upsertAttendanceToSupabase(att);
+              }
             }}
           />
         );
@@ -1342,129 +1389,18 @@ export default function App() {
           />
         );
       case 'reset-aplikasi':
-        const handleResetNow = async () => {
-          if (resetKeyword.trim().toUpperCase() !== 'RESET') {
-            return;
-          }
-          try {
-            // 1. Keep employees but set sisa kuota cuti to 0
-            const updatedEmployees = employees.map(emp => ({
-              ...emp,
-              cutiQuota: 0
-            }));
-
-            // Save updated employees to localStorage
-            localStorage.setItem('ppnpn_employees', JSON.stringify(updatedEmployees));
-
-            // 2. Clear all transaction data from localStorage
-            localStorage.setItem('ppnpn_attendance', JSON.stringify([]));
-            localStorage.setItem('ppnpn_leaves', JSON.stringify([]));
-            localStorage.setItem('ppnpn_logbooks', JSON.stringify([]));
-            localStorage.setItem('overtime_attendance_records', JSON.stringify([]));
-
-            // Remove any keys starting with overtime_requests_
-            const keysToRemove: string[] = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i);
-              if (k && k.startsWith('overtime_requests_')) {
-                keysToRemove.push(k);
-              }
-            }
-            keysToRemove.forEach(k => localStorage.removeItem(k));
-
-            // Set app is reset flag
-            localStorage.setItem('app_is_reset', 'true');
-
-            // 3. Update React States
-            setEmployees(updatedEmployees);
-            setAttendance([]);
-            setLeaves([]);
-            setLogbooks([]);
-
-            // 4. Sync with Supabase if connected
-            if (supabaseConnected) {
-              await clearTransactionsFromSupabase();
-              await resetAllEmployeeQuotasInSupabase();
-            }
-
-            setIsResetSuccess(true);
-            window.dispatchEvent(new Event('storage'));
-          } catch (error) {
-            console.error("Error during system reset:", error);
-            alert("Terjadi kesalahan saat mengosongkan data.");
-          }
-        };
-
         return (
-          <div className="max-w-xl mx-auto">
-            {isResetSuccess ? (
-              <div className="bg-white p-8 border border-emerald-200 rounded-2xl text-center space-y-6 shadow-md">
-                <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-100">
-                  <RefreshCw className="w-8 h-8 animate-spin" style={{ animationDuration: '3s' }} />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-lg font-bold text-slate-800">Sistem Berhasil Direset!</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                    Seluruh data transaksi, histori swafoto presensi, pengajuan cuti/izin, pengajuan lembur, rincian logbook kerja harian, sisa kuota cuti, serta status verifikasi & approval telah DIHAPUS secara permanen. Data Pegawai tetap utuh dan dipertahankan.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    window.location.reload();
-                  }}
-                  className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-all shadow-sm"
-                >
-                  Selesai & Muat Ulang Aplikasi
-                </button>
-              </div>
-            ) : (
-              <div className="bg-white p-8 border border-slate-200 rounded-2xl space-y-6 shadow-sm">
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                  <div className="p-2 bg-rose-50 text-rose-500 rounded-xl border border-rose-100">
-                    <AlertTriangle className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-slate-800">Reset Data & Sistem Aplikasi</h3>
-                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">Kembalikan seluruh data aplikasi PPNPN ke kondisi awal</p>
-                  </div>
-                </div>
-
-                <div className="bg-rose-50/50 border border-rose-100 p-4 rounded-xl text-xs text-rose-700 space-y-2 font-medium">
-                  <p className="font-bold">PERINGATAN KRITIKAL:</p>
-                  <p className="leading-relaxed text-[11px]">
-                    Tindakan ini tidak dapat dibatalkan. Seluruh data transaksi, histori swafoto presensi, pengajuan cuti/izin, pengajuan lembur, rincian logbook kerja harian, sisa kuota cuti, serta status verifikasi & approval akan <strong>DIKOSONGKAN/DIHAPUS secara permanen</strong>. <strong>Data Pegawai/Akun PPNPN TIDAK akan dihapus</strong> agar tetap dapat digunakan untuk masuk ke dalam sistem.
-                  </p>
-                </div>
-
-                <div className="space-y-4 pt-2 text-xs">
-                  <div className="space-y-1.5">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Konfirmasi Keamanan</label>
-                    <p className="text-[11px] text-slate-500 font-medium">Untuk menghindari ketidaksengajaan, silakan ketik kata kunci <strong className="text-rose-600">RESET</strong> di bawah ini:</p>
-                    <input
-                      type="text"
-                      value={resetKeyword}
-                      onChange={(e) => setResetKeyword(e.target.value)}
-                      placeholder="Ketik RESET"
-                      className="w-full text-xs px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 font-bold tracking-widest placeholder:font-normal placeholder:tracking-normal"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleResetNow}
-                    disabled={resetKeyword.trim().toUpperCase() !== 'RESET'}
-                    className={`w-full py-3.5 px-4 font-bold rounded-lg uppercase tracking-wider text-[11px] transition-all flex items-center justify-center gap-2 shadow-sm ${
-                      resetKeyword.trim().toUpperCase() === 'RESET'
-                        ? 'bg-rose-600 hover:bg-rose-700 text-white cursor-pointer'
-                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    }`}
-                  >
-                    <RefreshCw className="w-4 h-4 text-white" />
-                    <span>Lakukan Reset Data Pabrik</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          <ResetDataView
+            employees={employees}
+            attendance={attendance}
+            leaves={leaves}
+            logbooks={logbooks}
+            setEmployees={setEmployees}
+            setAttendance={setAttendance}
+            setLeaves={setLeaves}
+            setLogbooks={setLogbooks}
+            supabaseConnected={supabaseConnected}
+          />
         );
       case 'perilaku':
         return renderEvaluationView(
