@@ -441,12 +441,95 @@ export const upsertOvertimeToSupabase = async (rec: OvertimeAttendanceRecord, th
   }
 };
 
+export const clearAttendanceFromSupabase = async (): Promise<boolean> => {
+  try {
+    const { data } = await supabase.from('ppnpn_attendance').select('id');
+    if (data && data.length > 0) {
+      const ids = data.map(d => d.id);
+      const { error } = await supabase.from('ppnpn_attendance').delete().in('id', ids);
+      if (error) throw error;
+    } else {
+      await supabase.from('ppnpn_attendance').delete().not('id', 'is', null);
+    }
+    return true;
+  } catch (e) {
+    console.error("Failed to clear attendance from Supabase:", e);
+    return false;
+  }
+};
+
+export const clearLogbooksFromSupabase = async (): Promise<boolean> => {
+  try {
+    const { data } = await supabase.from('ppnpn_logbooks').select('id');
+    if (data && data.length > 0) {
+      const ids = data.map(d => d.id);
+      const { error } = await supabase.from('ppnpn_logbooks').delete().in('id', ids);
+      if (error) throw error;
+    } else {
+      await supabase.from('ppnpn_logbooks').delete().not('id', 'is', null);
+    }
+    return true;
+  } catch (e) {
+    console.error("Failed to clear logbooks from Supabase:", e);
+    return false;
+  }
+};
+
+export const clearOvertimeFromSupabase = async (): Promise<boolean> => {
+  try {
+    const { data } = await supabase.from('ppnpn_overtime_records').select('id');
+    if (data && data.length > 0) {
+      const ids = data.map(d => d.id);
+      const { error } = await supabase.from('ppnpn_overtime_records').delete().in('id', ids);
+      if (error) throw error;
+    } else {
+      await supabase.from('ppnpn_overtime_records').delete().not('id', 'is', null);
+    }
+    return true;
+  } catch (e) {
+    console.error("Failed to clear overtime records from Supabase:", e);
+    return false;
+  }
+};
+
+export const clearLeavesFromSupabase = async (): Promise<boolean> => {
+  try {
+    const { data } = await supabase.from('ppnpn_leaves').select('id');
+    if (data && data.length > 0) {
+      const ids = data.map(d => d.id);
+      const { error } = await supabase.from('ppnpn_leaves').delete().in('id', ids);
+      if (error) throw error;
+    } else {
+      await supabase.from('ppnpn_leaves').delete().not('id', 'is', null);
+    }
+    return true;
+  } catch (e) {
+    console.error("Failed to clear leave requests from Supabase:", e);
+    return false;
+  }
+};
+
+export const resetEmployeeQuotasTo12InSupabase = async (quota: number = 12): Promise<boolean> => {
+  try {
+    const { data } = await supabase.from('ppnpn_employees').select('id');
+    if (data && data.length > 0) {
+      const ids = data.map(d => d.id);
+      const { error } = await supabase.from('ppnpn_employees').update({ cuti_quota: quota }).in('id', ids);
+      if (error) throw error;
+    }
+    return true;
+  } catch (e) {
+    console.error("Failed to reset employee quotas in Supabase:", e);
+    return false;
+  }
+};
+
 export const clearTransactionsFromSupabase = async (): Promise<boolean> => {
   try {
-    await supabase.from('ppnpn_attendance').delete().neq('id', '_none_');
-    await supabase.from('ppnpn_leaves').delete().neq('id', '_none_');
-    await supabase.from('ppnpn_logbooks').delete().neq('id', '_none_');
-    await supabase.from('ppnpn_overtime_records').delete().neq('id', '_none_');
+    await clearAttendanceFromSupabase();
+    await clearLeavesFromSupabase();
+    await clearLogbooksFromSupabase();
+    await clearOvertimeFromSupabase();
     return true;
   } catch (e) {
     console.error("Failed to clear transactions from Supabase:", e);
@@ -454,15 +537,8 @@ export const clearTransactionsFromSupabase = async (): Promise<boolean> => {
   }
 };
 
-export const resetAllEmployeeQuotasInSupabase = async (): Promise<boolean> => {
-  try {
-    const { error } = await supabase.from('ppnpn_employees').update({ cuti_quota: 0 }).neq('id', '_none_');
-    if (error) throw error;
-    return true;
-  } catch (e) {
-    console.error("Failed to reset employee quotas in Supabase:", e);
-    return false;
-  }
+export const resetAllEmployeeQuotasInSupabase = async (quota: number = 12): Promise<boolean> => {
+  return resetEmployeeQuotasTo12InSupabase(quota);
 };
 
 // SQL creation script for easy execution in Supabase SQL Editor

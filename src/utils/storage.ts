@@ -66,6 +66,28 @@ const DEFAULT_EMPLOYEES: Employee[] = [
     joinDate: "2024-01-01",
     cutiQuota: 12,
     status: "aktif"
+  },
+  {
+    id: "ratmansyah",
+    name: "RATMANSYAH",
+    email: "ratmansyah@ppnpn.com",
+    role: "karyawan",
+    password: "password123",
+    position: "Security / Petugas Keamanan",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
+  {
+    id: "arief",
+    name: "MOH. ARIEF D",
+    email: "arief@ppnpn.com",
+    role: "karyawan",
+    password: "password123",
+    position: "Security / Petugas Keamanan",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
   }
 ];
 
@@ -300,6 +322,9 @@ export const safeSetLocalStorageItem = (key: string, data: any) => {
 
 export const getStoredData = () => {
   const isReset = localStorage.getItem('app_is_reset') === 'true';
+  const isResetAttendance = isReset || localStorage.getItem('app_is_reset_attendance') === 'true';
+  const isResetLeaves = isReset || localStorage.getItem('app_is_reset_cuti') === 'true';
+  const isResetLogbooks = isReset || localStorage.getItem('app_is_reset_logbook') === 'true';
 
   // Check if data is already seeded with old NIP format, if so, reset
   let employees = localStorage.getItem(KEYS.EMPLOYEES);
@@ -324,17 +349,17 @@ export const getStoredData = () => {
     employees = JSON.stringify(initialEmployees);
   }
   if (!attendance) {
-    const initialAttendance = isReset ? [] : seedAttendance();
+    const initialAttendance = isResetAttendance ? [] : seedAttendance();
     safeSetLocalStorageItem(KEYS.ATTENDANCE, initialAttendance);
     attendance = JSON.stringify(initialAttendance);
   }
   if (!leaves) {
-    const initialLeaves = isReset ? [] : DEFAULT_LEAVES;
+    const initialLeaves = isResetLeaves ? [] : DEFAULT_LEAVES;
     safeSetLocalStorageItem(KEYS.LEAVES, initialLeaves);
     leaves = JSON.stringify(initialLeaves);
   }
   if (!logbooks) {
-    const initialLogbooks = isReset ? [] : DEFAULT_LOGBOOKS;
+    const initialLogbooks = isResetLogbooks ? [] : DEFAULT_LOGBOOKS;
     safeSetLocalStorageItem(KEYS.LOGBOOKS, initialLogbooks);
     logbooks = JSON.stringify(initialLogbooks);
   }
@@ -395,6 +420,34 @@ export const getStoredData = () => {
     });
   }
 
+  if (!parsedEmployees.some(e => e.name.toLowerCase().includes('ratmansyah') || e.id.toLowerCase() === 'ratmansyah')) {
+    parsedEmployees.push({
+      id: "ratmansyah",
+      name: "RATMANSYAH",
+      email: "ratmansyah@ppnpn.com",
+      role: "karyawan",
+      password: "password123",
+      position: "Security / Petugas Keamanan",
+      joinDate: "2024-01-01",
+      cutiQuota: 12,
+      status: "aktif"
+    });
+  }
+
+  if (!parsedEmployees.some(e => e.name.toLowerCase().includes('arief') || e.id.toLowerCase() === 'arief')) {
+    parsedEmployees.push({
+      id: "arief",
+      name: "MOH. ARIEF D",
+      email: "arief@ppnpn.com",
+      role: "karyawan",
+      password: "password123",
+      position: "Security / Petugas Keamanan",
+      joinDate: "2024-01-01",
+      cutiQuota: 12,
+      status: "aktif"
+    });
+  }
+
   if (!parsedEmployees.some(e => e.id.toLowerCase() === 'maliq')) {
     parsedEmployees.push({
       id: "maliq",
@@ -416,6 +469,59 @@ export const getStoredData = () => {
     parsedAttendance = JSON.parse(attendance) as Attendance[];
   } catch (e) {
     parsedAttendance = [];
+  }
+
+  const getLocalDateString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayDateStr = getLocalDateString();
+
+  if (!isResetAttendance) {
+    if (!parsedAttendance.some(att => (att.employeeId?.toLowerCase() === 'ratmansyah' || att.employeeName?.toLowerCase().includes('ratmansyah')) && att.date === todayDateStr)) {
+      parsedAttendance.push({
+        id: `att_ratmansyah_${todayDateStr}`,
+        employeeId: "ratmansyah",
+        employeeName: "RATMANSYAH",
+        date: todayDateStr,
+        checkIn: "07:30",
+        checkOut: null,
+        checkInPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
+        checkOutPhoto: null,
+        checkInLocation: { lat: 0.4735, lng: 101.4478 },
+        checkOutLocation: null,
+        checkInAddress: "Kantor Pekanbaru",
+        checkOutAddress: null,
+        checkInStatus: 'Tepat Waktu',
+        checkOutStatus: null,
+        shift: 'pagi'
+      });
+      safeSetLocalStorageItem(KEYS.ATTENDANCE, parsedAttendance);
+    }
+
+    if (!parsedAttendance.some(att => (att.employeeId?.toLowerCase() === 'arief' || att.employeeName?.toLowerCase().includes('arief')) && att.date === todayDateStr)) {
+      parsedAttendance.push({
+        id: `att_arief_${todayDateStr}`,
+        employeeId: "arief",
+        employeeName: "MOH. ARIEF D",
+        date: todayDateStr,
+        checkIn: "07:15",
+        checkOut: null,
+        checkInPhoto: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150",
+        checkOutPhoto: null,
+        checkInLocation: { lat: 0.4735, lng: 101.4478 },
+        checkOutLocation: null,
+        checkInAddress: "Kantor Pekanbaru",
+        checkOutAddress: null,
+        checkInStatus: 'Tepat Waktu',
+        checkOutStatus: null,
+        shift: 'pagi'
+      });
+      safeSetLocalStorageItem(KEYS.ATTENDANCE, parsedAttendance);
+    }
   }
 
   let parsedLeaves: LeaveRequest[] = [];
