@@ -1,0 +1,6 @@
+{
+  "name": "Aplikasi Absensi PPNPN",
+  "description": "Sistem absensi pegawai PPNPN terintegrasi dengan Google Sheets, Google Drive, deteksi lokasi GPS, pengajuan cuti, dan rekapitulasi absen PDF.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
