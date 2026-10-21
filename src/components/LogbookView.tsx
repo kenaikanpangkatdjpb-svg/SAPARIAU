@@ -10,6 +10,21 @@ interface LogbookViewProps {
   onApproveLogbook?: (id: string, approve: boolean) => void;
 }
 
+const MONTH_NAMES = [
+  { value: '01', label: 'Januari' },
+  { value: '02', label: 'Februari' },
+  { value: '03', label: 'Maret' },
+  { value: '04', label: 'April' },
+  { value: '05', label: 'Mei' },
+  { value: '06', label: 'Juni' },
+  { value: '07', label: 'Juli' },
+  { value: '08', label: 'Agustus' },
+  { value: '09', label: 'September' },
+  { value: '10', label: 'Oktober' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'Desember' }
+];
+
 export default function LogbookView({
   user,
   employees,
@@ -22,15 +37,30 @@ export default function LogbookView({
   const [newLogContent, setNewLogContent] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   
+  // Current running month defaults
+  const now = useMemo(() => new Date(), []);
+  const curRunningYear = now.getFullYear();
+  const curRunningMonth = String(now.getMonth() + 1).padStart(2, '0');
+
+  // Month & Year Filter (defaults to 'all' or running month)
+  const [selectedMonth, setSelectedMonth] = useState<string>(curRunningMonth);
+  const [selectedYear, setSelectedYear] = useState<string>(String(curRunningYear));
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
-  // Filter logs based on user or search query
+  // Filter logs based on user, month, or search query
   const filteredLogbooks = useMemo(() => {
     let list = logbooks;
     if (!isAdmin) {
       list = logbooks.filter(log => log.employeeId === user.id);
+    }
+
+    // Filter by selected month
+    if (selectedMonth !== 'all') {
+      const monthPrefix = `${selectedYear}-${selectedMonth}`;
+      list = list.filter(log => log.date && log.date.startsWith(monthPrefix));
     }
     
     if (searchTerm.trim()) {
@@ -48,12 +78,12 @@ export default function LogbookView({
       if (dateCompare !== 0) return dateCompare;
       return (b.time || '').localeCompare(a.time || '');
     });
-  }, [logbooks, user, isAdmin, searchTerm]);
+  }, [logbooks, user, isAdmin, searchTerm, selectedMonth, selectedYear]);
 
-  // Reset pagination when search query changes
+  // Reset pagination when search query or month changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [searchTerm, selectedMonth, selectedYear]);
 
   const totalPages = Math.max(1, Math.ceil(filteredLogbooks.length / itemsPerPage));
   
@@ -146,7 +176,9 @@ export default function LogbookView({
                 Anda berada di Panel Verifikasi Logbook. Sebagai Admin, Anda dapat menyetujui atau menolak catatan aktivitas harian yang dikirim oleh pegawai PPNPN.
               </p>
               <div className="pt-2 flex justify-between items-center text-xs">
-                <span className="text-slate-400 font-semibold">Total Logbook:</span>
+                <span className="text-slate-400 font-semibold">
+                  {selectedMonth === 'all' ? 'Total Logbook:' : `Logbook (${MONTH_NAMES.find(m => m.value === selectedMonth)?.label} ${selectedYear}):`}
+                </span>
                 <span className="font-bold text-white bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
                   {filteredLogbooks.length} Laporan
                 </span>
@@ -157,20 +189,54 @@ export default function LogbookView({
 
         {/* Right Column: Riwayat Logbook Kerja (8 cols or full width if admin) */}
         <div className={`${isAdmin ? 'lg:col-span-8' : 'lg:col-span-8'} bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col`}>
-          {/* Card Header matching image style */}
-          <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
-            <h4 className="font-extrabold text-slate-800 text-sm">
-              Riwayat Logbook Kerja
-            </h4>
+          {/* Card Header matching image style with month filter */}
+          <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white">
+            <div className="flex items-center gap-2">
+              <h4 className="font-extrabold text-slate-800 text-sm">
+                Riwayat Logbook Kerja
+              </h4>
+              {selectedMonth !== 'all' && selectedMonth === curRunningMonth && selectedYear === String(curRunningYear) ? (
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                  Bulan Berjalan
+                </span>
+              ) : null}
+            </div>
             
-            {/* Pill-shaped search input exactly matching the screenshot */}
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Cari aktivitas..."
-              className="w-48 text-xs border border-slate-200 px-4 py-1.5 rounded-full placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
-            />
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Month selector */}
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                <option value="all">Semua Periode</option>
+                {MONTH_NAMES.map(m => (
+                  <option key={m.value} value={m.value}>
+                    {m.label} {m.value === curRunningMonth && selectedYear === String(curRunningYear) ? '(Berjalan)' : ''}
+                  </option>
+                ))}
+              </select>
+
+              {/* Year selector */}
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                {['2025', '2026', '2027', '2028'].map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+
+              {/* Pill-shaped search input */}
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Cari aktivitas..."
+                className="w-36 sm:w-44 text-xs border border-slate-200 px-3.5 py-1.5 rounded-full placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+              />
+            </div>
           </div>
 
           {/* Table view matching the screenshot */}

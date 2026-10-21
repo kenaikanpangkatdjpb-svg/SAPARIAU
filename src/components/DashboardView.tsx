@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   Users, 
   CalendarCheck, 
+  Calendar,
+  RotateCcw,
   Clock, 
   FileCheck2, 
   AlertCircle, 
@@ -16,6 +18,23 @@ import {
   Camera,
   Award
 } from 'lucide-react';
+
+const MONTH_OPTIONS = [
+  { value: '01', label: 'Januari' },
+  { value: '02', label: 'Februari' },
+  { value: '03', label: 'Maret' },
+  { value: '04', label: 'April' },
+  { value: '05', label: 'Mei' },
+  { value: '06', label: 'Juni' },
+  { value: '07', label: 'Juli' },
+  { value: '08', label: 'Agustus' },
+  { value: '09', label: 'September' },
+  { value: '10', label: 'Oktober' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'Desember' }
+];
+
+const YEARS_LIST = ['2025', '2026', '2027', '2028'];
 import { 
   ResponsiveContainer, 
   LineChart, 
@@ -226,7 +245,7 @@ export default function DashboardView({
 
   const todayAttendanceList = useMemo(() => {
     return attendance.filter(a => a.date === todayDateStr);
-  }, [attendance]);
+  }, [attendance, todayDateStr]);
 
   const onTimePercentage = useMemo(() => {
     const checkedInToday = todayAttendanceList.filter(a => a.checkIn);
@@ -235,20 +254,53 @@ export default function DashboardView({
     return Math.round((onTimeCount / checkedInToday.length) * 100);
   }, [todayAttendanceList]);
 
-  const totalLogbooksThisMonth = useMemo(() => {
-    // filter logbooks in June 2026
-    return logbooks.filter(l => l.date.includes('2026-06')).length;
-  }, [logbooks]);
+  // Dynamic Current Running Month (Bulan Berjalan) & Selected Month state
+  const now = useMemo(() => new Date(), []);
+  const currentRunningYear = now.getFullYear();
+  const currentRunningMonthNum = String(now.getMonth() + 1).padStart(2, '0');
+  const currentRunningDay = now.getDate();
 
-  // Chart Data: Discipline Trend (June 2026)
+  const [selectedMonth, setSelectedMonth] = useState(currentRunningMonthNum);
+  const [selectedYear, setSelectedYear] = useState(String(currentRunningYear));
+
+  const currentMonthLabel = useMemo(() => {
+    return MONTH_OPTIONS.find(m => m.value === selectedMonth)?.label || 'Bulan';
+  }, [selectedMonth]);
+
+  const isCurrentMonth = selectedYear === String(currentRunningYear) && selectedMonth === currentRunningMonthNum;
+  const currentMonthPrefix = `${selectedYear}-${selectedMonth}`;
+
+  // Days count to display on the chart
+  const daysInSelectedMonth = useMemo(() => {
+    return new Date(Number(selectedYear), Number(selectedMonth), 0).getDate();
+  }, [selectedYear, selectedMonth]);
+
+  // If viewing current running month, display up to today; for past months, display whole month
+  const maxDayToDisplay = useMemo(() => {
+    if (isCurrentMonth) {
+      return Math.min(daysInSelectedMonth, Math.max(1, currentRunningDay));
+    }
+    return daysInSelectedMonth;
+  }, [isCurrentMonth, daysInSelectedMonth, currentRunningDay]);
+
+  const rangeSubtitle = useMemo(() => {
+    const endDayStr = maxDayToDisplay < 10 ? `0${maxDayToDisplay}` : `${maxDayToDisplay}`;
+    return `HARI 01-${endDayStr}`;
+  }, [maxDayToDisplay]);
+
+  const totalLogbooksThisMonth = useMemo(() => {
+    return logbooks.filter(l => l.date && l.date.startsWith(currentMonthPrefix)).length;
+  }, [logbooks, currentMonthPrefix]);
+
+  // Chart Data: Discipline Trend (Current running month or selected month)
   const lineChartData = useMemo(() => {
     const days: { [key: string]: { date: string; 'Tepat Waktu': number; 'Terlambat': number; 'Luar Radius': number } } = {};
     
-    // Seed days 1 to 24 of June
-    for (let d = 1; d <= 24; d++) {
-      const dateStr = `2026-06-${d < 10 ? `0${d}` : d}`;
+    for (let d = 1; d <= maxDayToDisplay; d++) {
+      const dStr = d < 10 ? `0${d}` : `${d}`;
+      const dateStr = `${currentMonthPrefix}-${dStr}`;
       days[dateStr] = {
-        date: `${d < 10 ? `0${d}` : d}`,
+        date: dStr,
         'Tepat Waktu': 0,
         'Terlambat': 0,
         'Luar Radius': 0
@@ -256,7 +308,7 @@ export default function DashboardView({
     }
 
     attendance.forEach(att => {
-      if (att.date.startsWith('2026-06')) {
+      if (att.date && att.date.startsWith(currentMonthPrefix)) {
         if (!days[att.date]) return;
         if (att.checkInStatus === 'Tepat Waktu') {
           days[att.date]['Tepat Waktu'] += 1;
@@ -275,28 +327,37 @@ export default function DashboardView({
     });
 
     return Object.values(days).sort((a, b) => Number(a.date) - Number(b.date));
-  }, [attendance, settings]);
+  }, [attendance, settings, currentMonthPrefix, maxDayToDisplay]);
 
-  // Chart Data: Employee Logbooks submitted per day (June 2026)
+  // Chart Data: Employee Logbooks submitted per day (Current running month or selected month)
   const barChartData = useMemo(() => {
     const days: { [key: string]: { date: string; Logbooks: number } } = {};
-    for (let d = 1; d <= 13; d++) {
-      const dateStr = `2026-06-${d < 10 ? `0${d}` : d}`;
+    for (let d = 1; d <= maxDayToDisplay; d++) {
+      const dStr = d < 10 ? `0${d}` : `${d}`;
+      const dateStr = `${currentMonthPrefix}-${dStr}`;
       days[dateStr] = {
-        date: `${d < 10 ? `0${d}` : d}`,
+        date: dStr,
         Logbooks: 0
       };
     }
 
     logbooks.forEach(log => {
-      if (log.date.startsWith('2026-06')) {
+      if (log.date && log.date.startsWith(currentMonthPrefix)) {
         if (!days[log.date]) return;
         days[log.date].Logbooks += 1;
       }
     });
 
     return Object.values(days).sort((a, b) => Number(a.date) - Number(b.date));
-  }, [logbooks]);
+  }, [logbooks, currentMonthPrefix, maxDayToDisplay]);
+
+  const performanceScore = useMemo(() => {
+    const monthAtt = attendance.filter(a => a.date && a.date.startsWith(currentMonthPrefix));
+    if (monthAtt.length === 0) return 82.5;
+    const onTime = monthAtt.filter(a => a.checkInStatus === 'Tepat Waktu').length;
+    const score = (onTime / monthAtt.length) * 100;
+    return Number(score.toFixed(2));
+  }, [attendance, currentMonthPrefix]);
 
   const handleQuickLogSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -356,8 +417,88 @@ export default function DashboardView({
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Logbook Terkirim</p>
             <h3 className="text-2xl font-bold text-slate-800 mt-1">{totalLogbooksThisMonth}</h3>
-            <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Laporan Bulan Juni 2026</p>
+            <p className="text-[10px] text-slate-400 font-semibold mt-0.5 flex items-center gap-1">
+              <span>Laporan Bulan {currentMonthLabel} {selectedYear}</span>
+              {isCurrentMonth && (
+                <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-50 text-emerald-600 font-bold border border-emerald-200">
+                  Berjalan
+                </span>
+              )}
+            </p>
           </div>
+        </div>
+      </div>
+
+      {/* FILTER PERIODE BULAN & TAHUN (Default: Bulan Berjalan) */}
+      <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0">
+            <Calendar className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-800">
+                Periode Laporan: {currentMonthLabel} {selectedYear}
+              </span>
+              {isCurrentMonth ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Bulan Berjalan
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                  Arsip Historis
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-0.5">
+              Grafik Tren Kedisiplinan & Logbook Pegawai tersinkronisasi otomatis dengan bulan yang dipilih.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bulan:</label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white transition-all cursor-pointer"
+            >
+              {MONTH_OPTIONS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label} {m.value === currentRunningMonthNum && selectedYear === String(currentRunningYear) ? '(Berjalan)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tahun:</label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white transition-all cursor-pointer"
+            >
+              {YEARS_LIST.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+
+          {!isCurrentMonth && (
+            <button
+              onClick={() => {
+                setSelectedMonth(currentRunningMonthNum);
+                setSelectedYear(String(currentRunningYear));
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-all shadow-xs"
+              title="Kembali ke bulan yang sedang berjalan saat ini"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Bulan Berjalan</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -365,9 +506,25 @@ export default function DashboardView({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Trend Line Chart (6 cols) */}
         <div id="chart-tren-kedisiplinan" className="bg-white p-5 border border-slate-200/80 rounded-xl lg:col-span-6 flex flex-col shadow-sm">
-          <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Grafik Tren Kedisiplinan (Juni 2026)</h4>
-            <span className="text-[10px] font-mono text-slate-400 font-bold">HARI 01-24</span>
+          <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100 flex-wrap gap-2">
+            <div>
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Grafik Tren Kedisiplinan ({currentMonthLabel} {selectedYear})
+              </h4>
+              <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                Kedisiplinan kehadiran pegawai harian
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {isCurrentMonth && (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-bold border border-emerald-200">
+                  Bulan Berjalan
+                </span>
+              )}
+              <span className="text-[10px] font-mono text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                {rangeSubtitle}
+              </span>
+            </div>
           </div>
           <div className="h-64 flex-1">
             <ResponsiveContainer width="100%" height="100%">
@@ -387,9 +544,25 @@ export default function DashboardView({
 
         {/* Logbooks Bar Chart (3 cols) */}
         <div id="chart-logbook-pegawai" className="bg-white p-5 border border-slate-200/80 rounded-xl lg:col-span-3 flex flex-col shadow-sm">
-          <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100">
-            <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Logbook Pegawai (Juni 2026)</h4>
-            <span className="text-[10px] font-mono text-slate-400 font-bold">HARI 01-13</span>
+          <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100 flex-wrap gap-2">
+            <div>
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Logbook Pegawai ({currentMonthLabel} {selectedYear})
+              </h4>
+              <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                Total {totalLogbooksThisMonth} aktivitas tercatat
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {isCurrentMonth && (
+                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-bold border border-emerald-200">
+                  Bulan Berjalan
+                </span>
+              )}
+              <span className="text-[10px] font-mono text-slate-400 font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+                {rangeSubtitle}
+              </span>
+            </div>
           </div>
           <div className="h-64 flex-1">
             <ResponsiveContainer width="100%" height="100%">
@@ -408,7 +581,7 @@ export default function DashboardView({
         <div id="chart-rapor-kinerja" className="bg-white p-5 border border-slate-200/80 rounded-xl lg:col-span-3 flex flex-col justify-between shadow-sm">
           <div>
             <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Rapor Kinerja Komulatif</h4>
-            <p className="text-[10px] text-slate-400 font-bold">TIM PPNPN AKTIF</p>
+            <p className="text-[10px] text-slate-400 font-bold">TIM PPNPN ({currentMonthLabel.toUpperCase()} {selectedYear})</p>
           </div>
           
           <div className="relative flex items-center justify-center py-6">
@@ -428,7 +601,7 @@ export default function DashboardView({
                 strokeWidth="8" 
                 strokeLinecap="round" 
               />
-              {/* Filled Arc (percentage based, e.g. 72.42%) */}
+              {/* Filled Arc (percentage based) */}
               <path 
                 d="M 10 50 A 40 40 0 0 1 90 50" 
                 fill="none" 
@@ -436,11 +609,11 @@ export default function DashboardView({
                 strokeWidth="8" 
                 strokeLinecap="round" 
                 strokeDasharray="125.6" 
-                strokeDashoffset={125.6 * (1 - 72.42 / 100)} 
+                strokeDashoffset={125.6 * (1 - Math.min(100, Math.max(0, performanceScore)) / 100)} 
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-end pb-3">
-              <span className="text-2xl font-bold text-slate-800 leading-none">72.42</span>
+              <span className="text-2xl font-bold text-slate-800 leading-none">{performanceScore}</span>
               <span className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mt-1">Skor Kinerja Tim</span>
             </div>
           </div>

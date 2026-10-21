@@ -222,11 +222,32 @@ export const isQuotaError = (err: any): boolean => {
   );
 };
 
+const QUOTA_STORAGE_KEY = 'firebase_firestore_quota_exceeded_date';
+const getTodayStr = () => new Date().toISOString().slice(0, 10);
+
+const checkQuotaStateFromStorage = (): boolean => {
+  try {
+    const saved = localStorage.getItem(QUOTA_STORAGE_KEY);
+    return saved === getTodayStr();
+  } catch {
+    return false;
+  }
+};
+
 let lastFirebaseError: string | null = null;
-let quotaExceededState = false;
+let quotaExceededState = checkQuotaStateFromStorage();
 
 export const isFirebaseQuotaExceeded = (): boolean => quotaExceededState;
-export const setFirebaseQuotaExceeded = (val: boolean) => { quotaExceededState = val; };
+export const setFirebaseQuotaExceeded = (val: boolean) => {
+  quotaExceededState = val;
+  try {
+    if (val) {
+      localStorage.setItem(QUOTA_STORAGE_KEY, getTodayStr());
+    } else {
+      localStorage.removeItem(QUOTA_STORAGE_KEY);
+    }
+  } catch {}
+};
 export const getLastFirebaseError = (): string | null => lastFirebaseError;
 
 const getLocalCache = <T>(key: string, fallback: T): T => {
@@ -236,6 +257,19 @@ const getLocalCache = <T>(key: string, fallback: T): T => {
   } catch {
     return fallback;
   }
+};
+
+// Memory cache with TTL to prevent redundant Firestore bulk reads
+const readCacheTimestamps: Record<string, number> = {};
+const READ_CACHE_TTL_MS = 5 * 60 * 1000; // 5 menit cache per sesi/tab
+
+const isCacheValid = (key: string): boolean => {
+  const ts = readCacheTimestamps[key];
+  return !!ts && (Date.now() - ts < READ_CACHE_TTL_MS);
+};
+
+const markCacheFetched = (key: string) => {
+  readCacheTimestamps[key] = Date.now();
 };
 
 export const checkFirebaseConnection = async (): Promise<boolean> => {
@@ -249,7 +283,7 @@ export const checkFirebaseConnection = async (): Promise<boolean> => {
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier (50.000 read/hari) telah tercapai. Sistem otomatis beroperasi dalam mode offline lokal.";
       console.warn("[Firebase] Kuota harian Firestore tercapai saat uji koneksi. Beralih ke cache lokal.");
       return false;
@@ -260,17 +294,22 @@ export const checkFirebaseConnection = async (): Promise<boolean> => {
   }
 };
 
-export const getEmployeesFromFirebase = async (): Promise<Employee[] | null> => {
+export const getEmployeesFromFirebase = async (force: boolean = false): Promise<Employee[] | null> => {
   if (quotaExceededState) {
+    return getLocalCache<Employee[]>('ppnpn_employees', []);
+  }
+  if (!force && isCacheValid('employees')) {
     return getLocalCache<Employee[]>('ppnpn_employees', []);
   }
   try {
     const snap = await getDocs(collection(db, 'ppnpn_employees'));
+    markCacheFetched('employees');
     if (snap.empty) return [];
-    return snap.docs.map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }));
+    const list = snap.docs.map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }));
+    return list;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data tersimpan di perangkat.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil pegawai. Menggunakan data cache lokal.");
       return getLocalCache<Employee[]>('ppnpn_employees', []);
@@ -280,17 +319,21 @@ export const getEmployeesFromFirebase = async (): Promise<Employee[] | null> => 
   }
 };
 
-export const getAttendanceFromFirebase = async (): Promise<Attendance[] | null> => {
+export const getAttendanceFromFirebase = async (force: boolean = false): Promise<Attendance[] | null> => {
   if (quotaExceededState) {
+    return getLocalCache<Attendance[]>('ppnpn_attendance', []);
+  }
+  if (!force && isCacheValid('attendance')) {
     return getLocalCache<Attendance[]>('ppnpn_attendance', []);
   }
   try {
     const snap = await getDocs(collection(db, 'ppnpn_attendance'));
+    markCacheFetched('attendance');
     if (snap.empty) return [];
     return snap.docs.map(doc => mapAttendanceFromDb({ id: doc.id, ...doc.data() }));
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data absensi lokal.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil absensi. Menggunakan data cache lokal.");
       return getLocalCache<Attendance[]>('ppnpn_attendance', []);
@@ -300,17 +343,21 @@ export const getAttendanceFromFirebase = async (): Promise<Attendance[] | null> 
   }
 };
 
-export const getLeavesFromFirebase = async (): Promise<LeaveRequest[] | null> => {
+export const getLeavesFromFirebase = async (force: boolean = false): Promise<LeaveRequest[] | null> => {
   if (quotaExceededState) {
+    return getLocalCache<LeaveRequest[]>('ppnpn_leaves', []);
+  }
+  if (!force && isCacheValid('leaves')) {
     return getLocalCache<LeaveRequest[]>('ppnpn_leaves', []);
   }
   try {
     const snap = await getDocs(collection(db, 'ppnpn_leaves'));
+    markCacheFetched('leaves');
     if (snap.empty) return [];
     return snap.docs.map(doc => mapLeaveFromDb({ id: doc.id, ...doc.data() }));
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data cuti lokal.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil data cuti/izin. Menggunakan data cache lokal.");
       return getLocalCache<LeaveRequest[]>('ppnpn_leaves', []);
@@ -320,17 +367,21 @@ export const getLeavesFromFirebase = async (): Promise<LeaveRequest[] | null> =>
   }
 };
 
-export const getLogbooksFromFirebase = async (): Promise<Logbook[] | null> => {
+export const getLogbooksFromFirebase = async (force: boolean = false): Promise<Logbook[] | null> => {
   if (quotaExceededState) {
+    return getLocalCache<Logbook[]>('ppnpn_logbooks', []);
+  }
+  if (!force && isCacheValid('logbooks')) {
     return getLocalCache<Logbook[]>('ppnpn_logbooks', []);
   }
   try {
     const snap = await getDocs(collection(db, 'ppnpn_logbooks'));
+    markCacheFetched('logbooks');
     if (snap.empty) return [];
     return snap.docs.map(doc => mapLogbookFromDb({ id: doc.id, ...doc.data() }));
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data logbook lokal.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil logbook. Menggunakan data cache lokal.");
       return getLocalCache<Logbook[]>('ppnpn_logbooks', []);
@@ -340,17 +391,21 @@ export const getLogbooksFromFirebase = async (): Promise<Logbook[] | null> => {
   }
 };
 
-export const getSettingsFromFirebase = async (): Promise<OfficeSettings | null> => {
+export const getSettingsFromFirebase = async (force: boolean = false): Promise<OfficeSettings | null> => {
   if (quotaExceededState) {
+    return getLocalCache<OfficeSettings | null>('ppnpn_settings', null);
+  }
+  if (!force && isCacheValid('settings')) {
     return getLocalCache<OfficeSettings | null>('ppnpn_settings', null);
   }
   try {
     const snap = await getDoc(doc(db, 'ppnpn_settings', 'current_settings'));
+    markCacheFetched('settings');
     if (!snap.exists()) return null;
     return mapSettingsFromDb(snap.data());
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan pengaturan lokal.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil pengaturan. Menggunakan cache lokal.");
       return getLocalCache<OfficeSettings | null>('ppnpn_settings', null);
@@ -360,17 +415,21 @@ export const getSettingsFromFirebase = async (): Promise<OfficeSettings | null> 
   }
 };
 
-export const getOvertimeFromFirebase = async (): Promise<any[] | null> => {
+export const getOvertimeFromFirebase = async (force: boolean = false): Promise<any[] | null> => {
   if (quotaExceededState) {
+    return getLocalCache<any[]>('overtime_attendance_records', []);
+  }
+  if (!force && isCacheValid('overtime')) {
     return getLocalCache<any[]>('overtime_attendance_records', []);
   }
   try {
     const snap = await getDocs(collection(db, 'ppnpn_overtime_records'));
+    markCacheFetched('overtime');
     if (snap.empty) return [];
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data lembur lokal.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil data lembur. Menggunakan cache lokal.");
       return getLocalCache<any[]>('overtime_attendance_records', []);

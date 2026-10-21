@@ -272,7 +272,7 @@ export default function App() {
 
     loadAllData();
 
-    // Setup gentle periodic polling sync (every 120s) only if not quota exceeded and tab is visible
+    // Setup gentle periodic polling sync (every 15 minutes) only if not quota exceeded and tab is visible
     const interval = setInterval(async () => {
       if (isSupabaseQuotaExceeded()) {
         setIsQuotaExceeded(true);
@@ -329,7 +329,7 @@ export default function App() {
           console.warn("Notice in background sync:", err);
         }
       }
-    }, 120000);
+    }, 900000); // 15 menit (hemat 87% kuota read harian)
 
     return () => {
       clearInterval(interval);

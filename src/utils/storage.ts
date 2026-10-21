@@ -109,15 +109,15 @@ const DEFAULT_SETTINGS: OfficeSettings = {
   securityShiftMalamOut: "06:00"
 };
 
-// Seed attendance for June 2026 to make the graphs beautiful and realistic
-const seedAttendance = (): Attendance[] => {
+// Helper to generate simulated realistic attendance for any month
+const generateSimulatedAttendance = (year: number, month: number, maxDay: number): Attendance[] => {
   const list: Attendance[] = [];
   const employees = DEFAULT_EMPLOYEES;
-  const daysInJune = 24; // Today is June 24, 2026
+  const monthStr = month < 10 ? `0${month}` : `${month}`;
 
-  for (let d = 1; d < daysInJune; d++) {
+  for (let d = 1; d <= maxDay; d++) {
     const dayStr = d < 10 ? `0${d}` : `${d}`;
-    const date = `2026-06-${dayStr}`;
+    const date = `${year}-${monthStr}-${dayStr}`;
     
     // Skip weekends for simulation (Saturday: 6, Sunday: 0)
     const dateObj = new Date(date);
@@ -154,6 +154,26 @@ const seedAttendance = (): Attendance[] => {
       });
     });
   }
+  return list;
+};
+
+// Seed attendance for current month (bulan berjalan) and June 2026 to ensure graphs and dashboards are active
+const seedAttendance = (): Attendance[] => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const currentDay = now.getDate();
+
+  // 1. Seed historical June 2026 data
+  const juneList = generateSimulatedAttendance(2026, 6, 24);
+
+  // 2. Seed current running month data up to today
+  let currentMonthList: Attendance[] = [];
+  if (currentYear !== 2026 || currentMonth !== 6) {
+    currentMonthList = generateSimulatedAttendance(currentYear, currentMonth, Math.max(1, currentDay));
+  }
+
+  const list = [...juneList, ...currentMonthList];
 
   // Today's attendance before checking in (Jonathan has checked in for demo)
   const getLocalDateString = () => {
@@ -165,22 +185,24 @@ const seedAttendance = (): Attendance[] => {
   };
   const todayDateStr = getLocalDateString();
 
-  list.push({
-    id: `att_jonathan_${todayDateStr}`,
-    employeeId: "jonathan",
-    employeeName: "Jonathan",
-    date: todayDateStr,
-    checkIn: "08:15",
-    checkOut: null,
-    checkInPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-    checkOutPhoto: null,
-    checkInLocation: { lat: 0.4735, lng: 101.4478 },
-    checkOutLocation: null,
-    checkInAddress: "Kantor Pekanbaru",
-    checkOutAddress: null,
-    checkInStatus: 'Tepat Waktu',
-    checkOutStatus: null
-  });
+  if (!list.some(a => a.employeeId === 'jonathan' && a.date === todayDateStr)) {
+    list.push({
+      id: `att_jonathan_${todayDateStr}`,
+      employeeId: "jonathan",
+      employeeName: "Jonathan",
+      date: todayDateStr,
+      checkIn: "08:15",
+      checkOut: null,
+      checkInPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
+      checkOutPhoto: null,
+      checkInLocation: { lat: 0.4735, lng: 101.4478 },
+      checkOutLocation: null,
+      checkInAddress: "Kantor Pekanbaru",
+      checkOutAddress: null,
+      checkInStatus: 'Tepat Waktu',
+      checkOutStatus: null
+    });
+  }
 
   return list;
 };
@@ -222,32 +244,93 @@ const DEFAULT_LEAVES: LeaveRequest[] = [
   }
 ];
 
-const DEFAULT_LOGBOOKS: Logbook[] = [
-  {
-    id: "log1",
-    employeeId: "maliq",
-    employeeName: "maliq",
-    date: "2026-06-24",
-    time: "08:15 AM",
-    content: "Catat detail daily log summ."
-  },
-  {
-    id: "log2",
-    employeeId: "jonathan",
-    employeeName: "Jonathan",
-    date: "2026-06-24",
-    time: "03:30 AM",
-    content: "Catat detail daily log summ."
-  },
-  ...Array.from({ length: 13 }).map((_, i) => ({
-    id: `log_mock_${i}`,
-    employeeId: ["jonathan", "maliq"][i % 2],
-    employeeName: ["Jonathan", "maliq"][i % 2],
-    date: `2026-06-${(i + 1) < 10 ? `0${i + 1}` : i + 1}`,
-    time: "17:15",
-    content: "Melaksanakan tugas rutin PPNPN harian dan pelaporan berkas fisik."
-  }))
-];
+// Helper to generate simulated logbooks for any month
+const generateSimulatedLogbooks = (year: number, month: number, maxDay: number): Logbook[] => {
+  const list: Logbook[] = [];
+  const monthStr = month < 10 ? `0${month}` : `${month}`;
+  const emps = [
+    { id: 'jonathan', name: 'Jonathan' },
+    { id: 'maliq', name: 'maliq' },
+    { id: 'robby', name: 'ROBBY ANDAYANI' },
+    { id: 'ratmansyah', name: 'RATMANSYAH' }
+  ];
+  const sampleTasks = [
+    "Melaksanakan tugas rutin PPNPN harian dan pelaporan berkas fisik.",
+    "Pemeriksaan dan pengawasan operasional serta verifikasi dokumen kantor.",
+    "Pemeliharaan sarana prasarana kerja dan kebersihan lingkungan kantor.",
+    "Pelayanan pengamanan area kantor dan koordinasi penerimaan tamu kedinasan.",
+    "Penyusunan rekapitulasi data harian kegiatan staf PPNPN dan checklist berkas."
+  ];
+
+  for (let d = 1; d <= maxDay; d++) {
+    const dayStr = d < 10 ? `0${d}` : `${d}`;
+    const date = `${year}-${monthStr}-${dayStr}`;
+    const dateObj = new Date(date);
+    // Skip weekends
+    if (dateObj.getDay() === 0 || dateObj.getDay() === 6) continue;
+
+    // Add 1-2 logbook entries per working day
+    const entriesToday = (d % 2) + 1;
+    for (let i = 0; i < entriesToday; i++) {
+      const emp = emps[(d + i) % emps.length];
+      list.push({
+        id: `log_${year}_${monthStr}_${dayStr}_${emp.id}_${i}`,
+        employeeId: emp.id,
+        employeeName: emp.name,
+        date,
+        time: i === 0 ? "08:30" : "16:45",
+        content: sampleTasks[(d + i) % sampleTasks.length],
+        status: "Approved"
+      });
+    }
+  }
+  return list;
+};
+
+const getInitialLogbooks = (): Logbook[] => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const currentDay = now.getDate();
+
+  // 1. June 2026 historical logbooks
+  const juneLogs: Logbook[] = [
+    {
+      id: "log1",
+      employeeId: "maliq",
+      employeeName: "maliq",
+      date: "2026-06-24",
+      time: "08:15 AM",
+      content: "Catat detail daily log summ."
+    },
+    {
+      id: "log2",
+      employeeId: "jonathan",
+      employeeName: "Jonathan",
+      date: "2026-06-24",
+      time: "03:30 AM",
+      content: "Catat detail daily log summ."
+    },
+    ...Array.from({ length: 13 }).map((_, i) => ({
+      id: `log_mock_${i}`,
+      employeeId: ["jonathan", "maliq"][i % 2],
+      employeeName: ["Jonathan", "maliq"][i % 2],
+      date: `2026-06-${(i + 1) < 10 ? `0${i + 1}` : i + 1}`,
+      time: "17:15",
+      content: "Melaksanakan tugas rutin PPNPN harian dan pelaporan berkas fisik."
+    }))
+  ];
+
+  // 2. Current running month logbooks
+  let curLogs: Logbook[] = [];
+  if (currentYear !== 2026 || currentMonth !== 6) {
+    curLogs = generateSimulatedLogbooks(currentYear, currentMonth, Math.max(1, currentDay));
+  }
+
+  return [...juneLogs, ...curLogs];
+};
+
+const DEFAULT_LOGBOOKS: Logbook[] = getInitialLogbooks();
 
 // LocalStorage Keys
 const KEYS = {
@@ -524,6 +607,18 @@ export const getStoredData = () => {
     }
   }
 
+  // Ensure current running month (bulan berjalan) has attendance records
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  const curMonthPrefix = `${curYear}-${curMonth < 10 ? `0${curMonth}` : curMonth}`;
+
+  if (!isResetAttendance && !parsedAttendance.some(att => att.date && att.date.startsWith(curMonthPrefix))) {
+    const curMonthAtt = generateSimulatedAttendance(curYear, curMonth, Math.max(1, now.getDate()));
+    parsedAttendance = [...parsedAttendance, ...curMonthAtt];
+    safeSetLocalStorageItem(KEYS.ATTENDANCE, parsedAttendance);
+  }
+
   let parsedLeaves: LeaveRequest[] = [];
   try {
     parsedLeaves = JSON.parse(leaves) as LeaveRequest[];
@@ -536,6 +631,13 @@ export const getStoredData = () => {
     parsedLogbooks = JSON.parse(logbooks) as Logbook[];
   } catch (e) {
     parsedLogbooks = [];
+  }
+
+  // Ensure current running month (bulan berjalan) has logbook records
+  if (!isResetLogbooks && !parsedLogbooks.some(log => log.date && log.date.startsWith(curMonthPrefix))) {
+    const curMonthLogs = generateSimulatedLogbooks(curYear, curMonth, Math.max(1, now.getDate()));
+    parsedLogbooks = [...parsedLogbooks, ...curMonthLogs];
+    safeSetLocalStorageItem(KEYS.LOGBOOKS, parsedLogbooks);
   }
 
   let parsedSettings: OfficeSettings = DEFAULT_SETTINGS;
