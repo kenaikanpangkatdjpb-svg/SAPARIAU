@@ -262,8 +262,8 @@ export default function RekapLemburView({ employees, attendance, settings, leave
       if (empId === 'lucas') {
         if ([7, 13, 19, 25].includes(day)) return 2;
       }
-      // Jonathan -> maps to Zainal Erwin's exact schedule
-      if (empId === 'jonathan') {
+      // Maliq schedule
+      if (empId === 'maliq') {
         if ([14, 21, 27].includes(day)) return 2;
         if (day === 28) return 3;
       }
@@ -277,7 +277,7 @@ export default function RekapLemburView({ employees, attendance, settings, leave
       const hash = empId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) + day;
       if (empId === 'lucas') {
         if ([5, 11, 18, 24].includes(day)) return 2;
-      } else if (empId === 'jonathan') {
+      } else if (empId === 'maliq') {
         if ([6, 12, 20].includes(day)) return 2;
         if (day === 26) return 3;
       } else if (empId === 'robert') {
@@ -450,7 +450,7 @@ export default function RekapLemburView({ employees, attendance, settings, leave
 
     // Add employee rows
     calculatedData.forEach((row, idx) => {
-      const rek = row.employee.id === 'lucas' ? 'MANDIRI 10800223' : row.employee.id === 'jonathan' ? 'BRI 00129931' : 'BNI 09223321';
+      const rek = row.employee.id === 'maliq' ? 'BRI 00129931' : 'BNI 09223321';
       
       // Sub-row 1
       rowsHtml += `<tr>`;
@@ -775,7 +775,7 @@ export default function RekapLemburView({ employees, attendance, settings, leave
                       </td>
                       <td rowSpan={2} className="border border-slate-700 px-2.5 py-1 text-slate-400 font-mono text-[8px] text-left leading-normal">
                         <div>{idx + 1}. .............................</div>
-                        <div className="mt-2 text-slate-400 font-sans font-bold text-[7px] truncate uppercase">Rek: {row.employee.id === 'lucas' ? 'MANDIRI 10800223' : row.employee.id === 'jonathan' ? 'BRI 00129931' : 'BNI 09223321'}</div>
+                        <div className="mt-2 text-slate-400 font-sans font-bold text-[7px] truncate uppercase">Rek: {row.employee.id === 'maliq' ? 'BRI 00129931' : 'BNI 09223321'}</div>
                       </td>
                     </tr>
 

@@ -16,6 +16,8 @@ import {
   upsertSettingsToFirebase,
   deleteEmployeeFromFirebase,
   upsertOvertimeToFirebase,
+  subscribeToAttendanceFromFirebase,
+  subscribeToEmployeesFromFirebase,
   clearAttendanceFromFirebase,
   clearLogbooksFromFirebase,
   clearOvertimeFromFirebase,
@@ -23,6 +25,7 @@ import {
   resetEmployeeQuotasTo12InFirebase,
   clearTransactionsFromFirebase,
   resetAllEmployeeQuotasInFirebase,
+  purgeNonPpnpnFromFirebase,
   getLastFirebaseError,
   isFirebaseQuotaExceeded,
   isQuotaError,
@@ -94,6 +97,8 @@ export const upsertLogbookToSupabase = upsertLogbookToFirebase;
 export const upsertSettingsToSupabase = upsertSettingsToFirebase;
 export const deleteEmployeeFromSupabase = deleteEmployeeFromFirebase;
 export const upsertOvertimeToSupabase = upsertOvertimeToFirebase;
+export const subscribeToAttendanceFromSupabase = subscribeToAttendanceFromFirebase;
+export const subscribeToEmployeesFromSupabase = subscribeToEmployeesFromFirebase;
 
 export const clearAttendanceFromSupabase = clearAttendanceFromFirebase;
 export const clearLogbooksFromSupabase = clearLogbooksFromFirebase;
@@ -102,6 +107,7 @@ export const clearLeavesFromSupabase = clearLeavesFromFirebase;
 export const resetEmployeeQuotasTo12InSupabase = resetEmployeeQuotasTo12InFirebase;
 export const clearTransactionsFromSupabase = clearTransactionsFromFirebase;
 export const resetAllEmployeeQuotasInSupabase = resetAllEmployeeQuotasInFirebase;
+export const purgeNonPpnpnFromSupabase = purgeNonPpnpnFromFirebase;
 
 export const SQL_CREATION_SCRIPT = `-- Firebase Firestore Database Inisialisasi
 -- Aplikasi PPNPN telah bermigrasi penuh ke Firebase Firestore!

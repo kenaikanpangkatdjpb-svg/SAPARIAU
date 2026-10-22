@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
 import {
   getFirestore,
   collection,
@@ -7,9 +8,14 @@ import {
   getDocs,
   setDoc,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  onSnapshot,
+  query,
+  where,
+  limit
 } from 'firebase/firestore';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from '../types';
+import { isNonPpnpn, NON_PPNPN_IDS } from './storage';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
 
 // Resolves Firebase config: prioritizes VITE_FIREBASE_* environment variables (for Vercel/production),
@@ -33,7 +39,7 @@ export const getActiveFirebaseConfig = () => {
 export const activeFirebaseConfig = getActiveFirebaseConfig();
 
 // Initialize Firebase App
-const app = !getApps().length ? initializeApp(activeFirebaseConfig) : getApp();
+export const app = !getApps().length ? initializeApp(activeFirebaseConfig) : getApp();
 
 // Initialize Firestore with specific databaseId if provided
 export const db = getFirestore(
@@ -41,17 +47,66 @@ export const db = getFirestore(
   (activeFirebaseConfig as any).firestoreDatabaseId || '(default)'
 );
 
+export const auth = getAuth(app);
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  return errInfo;
+}
+
 // Mappers to ensure data consistency
 export const mapEmployeeToDb = (emp: Employee) => ({
   id: emp.id,
-  name: emp.name,
-  email: emp.email,
-  role: emp.role,
-  password: emp.password,
-  position: emp.position,
+  name: emp.name || '',
+  email: emp.email || `${emp.id}@ppnpn.com`,
+  role: emp.role || 'karyawan',
+  password: emp.password || 'password123',
+  position: emp.position || '',
   photo_url: emp.photoUrl || null,
-  join_date: emp.joinDate,
-  cuti_quota: emp.cutiQuota,
+  join_date: emp.joinDate || new Date().toISOString().split('T')[0],
+  cuti_quota: typeof emp.cutiQuota === 'number' ? emp.cutiQuota : 12,
   shift: emp.shift || null,
   status: emp.status || 'aktif'
 });
@@ -222,8 +277,13 @@ export const isQuotaError = (err: any): boolean => {
   );
 };
 
-const QUOTA_STORAGE_KEY = 'firebase_firestore_quota_exceeded_date';
+const QUOTA_STORAGE_KEY = `firebase_quota_exceeded_${(activeFirebaseConfig as any).projectId || 'default'}`;
 const getTodayStr = () => new Date().toISOString().slice(0, 10);
+
+// Clear any old obsolete global key from previous projects
+try {
+  localStorage.removeItem('firebase_firestore_quota_exceeded_date');
+} catch {}
 
 const checkQuotaStateFromStorage = (): boolean => {
   try {
@@ -245,6 +305,7 @@ export const setFirebaseQuotaExceeded = (val: boolean) => {
       localStorage.setItem(QUOTA_STORAGE_KEY, getTodayStr());
     } else {
       localStorage.removeItem(QUOTA_STORAGE_KEY);
+      localStorage.removeItem('firebase_firestore_quota_exceeded_date');
     }
   } catch {}
 };
@@ -273,13 +334,11 @@ const markCacheFetched = (key: string) => {
 };
 
 export const checkFirebaseConnection = async (): Promise<boolean> => {
-  if (quotaExceededState) {
-    return false;
-  }
   try {
     const docRef = doc(db, 'ppnpn_settings', 'health_check');
     await setDoc(docRef, { ping: true, timestamp: Date.now() }, { merge: true });
     lastFirebaseError = null;
+    setFirebaseQuotaExceeded(false);
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
@@ -305,17 +364,19 @@ export const getEmployeesFromFirebase = async (force: boolean = false): Promise<
     const snap = await getDocs(collection(db, 'ppnpn_employees'));
     markCacheFetched('employees');
     if (snap.empty) return [];
-    const list = snap.docs.map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }));
+    const list = snap.docs
+      .map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }))
+      .filter(emp => !isNonPpnpn(emp.id, emp.name));
     return list;
   } catch (e: any) {
     if (isQuotaError(e)) {
       setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data tersimpan di perangkat.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil pegawai. Menggunakan data cache lokal.");
-      return getLocalCache<Employee[]>('ppnpn_employees', []);
+      return getLocalCache<Employee[]>('ppnpn_employees', []).filter(emp => !isNonPpnpn(emp.id, emp.name));
     }
     console.warn("Gagal mengambil data pegawai dari Firebase, menggunakan cache lokal:", e?.message || e);
-    return getLocalCache<Employee[]>('ppnpn_employees', []);
+    return getLocalCache<Employee[]>('ppnpn_employees', []).filter(emp => !isNonPpnpn(emp.id, emp.name));
   }
 };
 
@@ -330,16 +391,18 @@ export const getAttendanceFromFirebase = async (force: boolean = false): Promise
     const snap = await getDocs(collection(db, 'ppnpn_attendance'));
     markCacheFetched('attendance');
     if (snap.empty) return [];
-    return snap.docs.map(doc => mapAttendanceFromDb({ id: doc.id, ...doc.data() }));
+    return snap.docs
+      .map(doc => mapAttendanceFromDb({ id: doc.id, ...doc.data() }))
+      .filter(att => !isNonPpnpn(att.employeeId, att.employeeName));
   } catch (e: any) {
     if (isQuotaError(e)) {
       setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data absensi lokal.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil absensi. Menggunakan data cache lokal.");
-      return getLocalCache<Attendance[]>('ppnpn_attendance', []);
+      return getLocalCache<Attendance[]>('ppnpn_attendance', []).filter(att => !isNonPpnpn(att.employeeId, att.employeeName));
     }
     console.warn("Gagal mengambil absensi dari Firebase, menggunakan cache lokal:", e?.message || e);
-    return getLocalCache<Attendance[]>('ppnpn_attendance', []);
+    return getLocalCache<Attendance[]>('ppnpn_attendance', []).filter(att => !isNonPpnpn(att.employeeId, att.employeeName));
   }
 };
 
@@ -354,16 +417,18 @@ export const getLeavesFromFirebase = async (force: boolean = false): Promise<Lea
     const snap = await getDocs(collection(db, 'ppnpn_leaves'));
     markCacheFetched('leaves');
     if (snap.empty) return [];
-    return snap.docs.map(doc => mapLeaveFromDb({ id: doc.id, ...doc.data() }));
+    return snap.docs
+      .map(doc => mapLeaveFromDb({ id: doc.id, ...doc.data() }))
+      .filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
   } catch (e: any) {
     if (isQuotaError(e)) {
       setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data cuti lokal.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil data cuti/izin. Menggunakan data cache lokal.");
-      return getLocalCache<LeaveRequest[]>('ppnpn_leaves', []);
+      return getLocalCache<LeaveRequest[]>('ppnpn_leaves', []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
     }
     console.warn("Gagal mengambil data cuti dari Firebase, menggunakan cache lokal:", e?.message || e);
-    return getLocalCache<LeaveRequest[]>('ppnpn_leaves', []);
+    return getLocalCache<LeaveRequest[]>('ppnpn_leaves', []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
   }
 };
 
@@ -378,16 +443,18 @@ export const getLogbooksFromFirebase = async (force: boolean = false): Promise<L
     const snap = await getDocs(collection(db, 'ppnpn_logbooks'));
     markCacheFetched('logbooks');
     if (snap.empty) return [];
-    return snap.docs.map(doc => mapLogbookFromDb({ id: doc.id, ...doc.data() }));
+    return snap.docs
+      .map(doc => mapLogbookFromDb({ id: doc.id, ...doc.data() }))
+      .filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
   } catch (e: any) {
     if (isQuotaError(e)) {
       setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data logbook lokal.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil logbook. Menggunakan data cache lokal.");
-      return getLocalCache<Logbook[]>('ppnpn_logbooks', []);
+      return getLocalCache<Logbook[]>('ppnpn_logbooks', []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
     }
     console.warn("Gagal mengambil logbook dari Firebase, menggunakan cache lokal:", e?.message || e);
-    return getLocalCache<Logbook[]>('ppnpn_logbooks', []);
+    return getLocalCache<Logbook[]>('ppnpn_logbooks', []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
   }
 };
 
@@ -440,101 +507,94 @@ export const getOvertimeFromFirebase = async (force: boolean = false): Promise<a
 };
 
 export const upsertEmployeeToFirebase = async (employee: Employee, throwOnError = false): Promise<boolean> => {
-  if (quotaExceededState) {
-    console.warn("[Firebase] Mode offline aktif karena kuota Firestore tercapai. Data pegawai tersimpan di penyimpanan lokal.");
-    return true;
-  }
   try {
     const payload = mapEmployeeToDb(employee);
     await setDoc(doc(db, 'ppnpn_employees', employee.id), payload, { merge: true });
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota Firestore tercapai. Data tersimpan di penyimpanan lokal.";
       console.warn("[Firebase] Kuota Firestore tercapai saat menyimpan data pegawai. Tersimpan di penyimpanan lokal.");
       return true;
     }
     console.warn(`Gagal memperbarui pegawai ${employee.id} ke Firebase:`, e?.message || e);
-    if (throwOnError) throw new Error(e?.message || String(e));
+    if (throwOnError) {
+      handleFirestoreError(e, OperationType.WRITE, `ppnpn_employees/${employee.id}`);
+      throw new Error(e?.message || String(e));
+    }
     return false;
   }
 };
 
 export const upsertAttendanceToFirebase = async (att: Attendance, throwOnError = false): Promise<boolean> => {
-  if (quotaExceededState) {
-    console.warn("[Firebase] Mode offline aktif karena kuota Firestore tercapai. Data absensi tersimpan di penyimpanan lokal.");
-    return true;
-  }
   try {
     const payload = mapAttendanceToDb(att);
     await setDoc(doc(db, 'ppnpn_attendance', att.id), payload, { merge: true });
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota Firestore tercapai. Data tersimpan di penyimpanan lokal.";
       console.warn(`[Firebase] Kuota Firestore tercapai saat menyimpan absensi ${att.id}. Tersimpan di penyimpanan lokal.`);
       return true;
     }
     console.warn(`Gagal memperbarui absensi ${att.id} ke Firebase:`, e?.message || e);
-    if (throwOnError) throw new Error(e?.message || String(e));
+    if (throwOnError) {
+      handleFirestoreError(e, OperationType.WRITE, `ppnpn_attendance/${att.id}`);
+      throw new Error(e?.message || String(e));
+    }
     return false;
   }
 };
 
 export const deleteAttendanceFromFirebase = async (id: string, throwOnError = false): Promise<boolean> => {
-  if (quotaExceededState) {
-    console.warn("[Firebase] Mode offline aktif karena kuota Firestore tercapai. Penghapusan absensi lokal.");
-    return true;
-  }
   try {
     await deleteDoc(doc(db, 'ppnpn_attendance', id));
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       console.warn(`[Firebase] Kuota Firestore tercapai saat menghapus absensi ${id}.`);
       return true;
     }
     console.warn(`Gagal menghapus absensi ${id} dari Firebase:`, e?.message || e);
-    if (throwOnError) throw new Error(e?.message || String(e));
+    if (throwOnError) {
+      handleFirestoreError(e, OperationType.DELETE, `ppnpn_attendance/${id}`);
+      throw new Error(e?.message || String(e));
+    }
     return false;
   }
 };
 
 export const upsertLeaveToFirebase = async (leave: LeaveRequest, throwOnError = false): Promise<boolean> => {
-  if (quotaExceededState) {
-    console.warn("[Firebase] Mode offline aktif karena kuota Firestore tercapai. Permohonan cuti tersimpan di penyimpanan lokal.");
-    return true;
-  }
   try {
     const payload = mapLeaveToDb(leave);
     await setDoc(doc(db, 'ppnpn_leaves', leave.id), payload, { merge: true });
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota Firestore tercapai. Data cuti tersimpan di penyimpanan lokal.";
       console.warn(`[Firebase] Kuota Firestore tercapai saat menyimpan permohonan cuti ${leave.id}. Tersimpan lokal.`);
       return true;
     }
     console.warn(`Gagal memperbarui permohonan cuti ${leave.id} ke Firebase:`, e?.message || e);
-    if (throwOnError) throw new Error(e?.message || String(e));
+    if (throwOnError) {
+      handleFirestoreError(e, OperationType.WRITE, `ppnpn_leaves/${leave.id}`);
+      throw new Error(e?.message || String(e));
+    }
     return false;
   }
 };
 
 export const deleteLeaveFromFirebase = async (id: string): Promise<boolean> => {
-  if (quotaExceededState) {
-    return true;
-  }
   try {
     await deleteDoc(doc(db, 'ppnpn_leaves', id));
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       return true;
     }
     console.warn(`Gagal menghapus cuti ${id} dari Firebase:`, e?.message || e);
@@ -543,57 +603,53 @@ export const deleteLeaveFromFirebase = async (id: string): Promise<boolean> => {
 };
 
 export const upsertLogbookToFirebase = async (log: Logbook, throwOnError = false): Promise<boolean> => {
-  if (quotaExceededState) {
-    console.warn("[Firebase] Mode offline aktif karena kuota Firestore tercapai. Catatan logbook tersimpan lokal.");
-    return true;
-  }
   try {
     const payload = mapLogbookToDb(log);
     await setDoc(doc(db, 'ppnpn_logbooks', log.id), payload, { merge: true });
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota Firestore tercapai. Logbook tersimpan di penyimpanan lokal.";
       console.warn(`[Firebase] Kuota Firestore tercapai saat menyimpan logbook ${log.id}. Tersimpan lokal.`);
       return true;
     }
     console.warn(`Gagal memperbarui logbook ${log.id} ke Firebase:`, e?.message || e);
-    if (throwOnError) throw new Error(e?.message || String(e));
+    if (throwOnError) {
+      handleFirestoreError(e, OperationType.WRITE, `ppnpn_logbooks/${log.id}`);
+      throw new Error(e?.message || String(e));
+    }
     return false;
   }
 };
 
 export const upsertSettingsToFirebase = async (settings: OfficeSettings, throwOnError = false): Promise<boolean> => {
-  if (quotaExceededState) {
-    return true;
-  }
   try {
     const payload = mapSettingsToDb(settings);
     await setDoc(doc(db, 'ppnpn_settings', 'current_settings'), payload, { merge: true });
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       console.warn("[Firebase] Kuota Firestore tercapai saat menyimpan pengaturan. Tersimpan lokal.");
       return true;
     }
     console.warn("Gagal memperbarui pengaturan ke Firebase:", e?.message || e);
-    if (throwOnError) throw new Error(e?.message || String(e));
+    if (throwOnError) {
+      handleFirestoreError(e, OperationType.WRITE, 'ppnpn_settings/current_settings');
+      throw new Error(e?.message || String(e));
+    }
     return false;
   }
 };
 
 export const deleteEmployeeFromFirebase = async (id: string): Promise<boolean> => {
-  if (quotaExceededState) {
-    return true;
-  }
   try {
     await deleteDoc(doc(db, 'ppnpn_employees', id));
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       return true;
     }
     console.warn(`Gagal menghapus pegawai ${id} dari Firebase:`, e?.message || e);
@@ -602,22 +658,55 @@ export const deleteEmployeeFromFirebase = async (id: string): Promise<boolean> =
 };
 
 export const upsertOvertimeToFirebase = async (rec: any, throwOnError = false): Promise<boolean> => {
-  if (quotaExceededState) {
-    return true;
-  }
   try {
     if (!rec || !rec.id) return false;
     await setDoc(doc(db, 'ppnpn_overtime_records', rec.id), rec, { merge: true });
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
-      quotaExceededState = true;
+      setFirebaseQuotaExceeded(true);
       console.warn("[Firebase] Kuota Firestore tercapai saat menyimpan lembur. Tersimpan lokal.");
       return true;
     }
     console.warn(`Gagal memperbarui rekap lembur ke Firebase:`, e?.message || e);
     if (throwOnError) throw new Error(e?.message || String(e));
     return false;
+  }
+};
+
+export const subscribeToAttendanceFromFirebase = (callback: (records: Attendance[]) => void) => {
+  try {
+    return onSnapshot(collection(db, 'ppnpn_attendance'), (snap) => {
+      if (!snap.empty) {
+        const list = snap.docs
+          .map(doc => mapAttendanceFromDb({ id: doc.id, ...doc.data() }))
+          .filter(att => !isNonPpnpn(att.employeeId, att.employeeName));
+        callback(list);
+      }
+    }, (error) => {
+      console.warn("[Firebase] onSnapshot attendance error:", error?.message || error);
+    });
+  } catch (err) {
+    console.warn("[Firebase] subscribeToAttendanceFromFirebase caught error:", err);
+    return () => {};
+  }
+};
+
+export const subscribeToEmployeesFromFirebase = (callback: (emps: Employee[]) => void) => {
+  try {
+    return onSnapshot(collection(db, 'ppnpn_employees'), (snap) => {
+      if (!snap.empty) {
+        const list = snap.docs
+          .map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }))
+          .filter(emp => !isNonPpnpn(emp.id, emp.name));
+        callback(list);
+      }
+    }, (error) => {
+      console.warn("[Firebase] onSnapshot employees error:", error?.message || error);
+    });
+  } catch (err) {
+    console.warn("[Firebase] subscribeToEmployeesFromFirebase caught error:", err);
+    return () => {};
   }
 };
 
@@ -726,4 +815,74 @@ export const clearTransactionsFromFirebase = async (): Promise<boolean> => {
 
 export const resetAllEmployeeQuotasInFirebase = async (quota: number = 12): Promise<boolean> => {
   return resetEmployeeQuotasTo12InFirebase(quota);
+};
+
+export const purgeNonPpnpnFromFirebase = async (): Promise<boolean> => {
+  if (quotaExceededState) return true;
+  try {
+    // 1. Delete by IDs from ppnpn_employees
+    for (const id of NON_PPNPN_IDS) {
+      try {
+        await deleteDoc(doc(db, 'ppnpn_employees', id));
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          setFirebaseQuotaExceeded(true);
+          return true;
+        }
+      }
+    }
+
+    // 2. Query and delete any employees with matching names
+    try {
+      const snap = await getDocs(collection(db, 'ppnpn_employees'));
+      const batch = writeBatch(db);
+      let count = 0;
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (isNonPpnpn(d.id, data.name)) {
+          batch.delete(d.ref);
+          count++;
+        }
+      });
+      if (count > 0) {
+        await batch.commit();
+      }
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setFirebaseQuotaExceeded(true);
+        return true;
+      }
+    }
+
+    // 3. Delete attendance for non-PPNPN
+    try {
+      const snap = await getDocs(collection(db, 'ppnpn_attendance'));
+      const batch = writeBatch(db);
+      let count = 0;
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (isNonPpnpn(data.employee_id, data.employee_name) || isNonPpnpn(d.id, '')) {
+          batch.delete(d.ref);
+          count++;
+        }
+      });
+      if (count > 0) {
+        await batch.commit();
+      }
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setFirebaseQuotaExceeded(true);
+        return true;
+      }
+    }
+
+    return true;
+  } catch (e: any) {
+    if (isQuotaError(e)) {
+      setFirebaseQuotaExceeded(true);
+      return true;
+    }
+    console.warn("Gagal membersihkan data non-PPNPN di Firebase:", e?.message || e);
+    return false;
+  }
 };

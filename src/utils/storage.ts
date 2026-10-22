@@ -1,49 +1,70 @@
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from '../types';
-// Default mock data to populate immediately and match the screenshot
-const DEFAULT_EMPLOYEES: Employee[] = [
+// List of IDs and names that are NOT PPNPN and must be excluded from PPNPN roster
+export const NON_PPNPN_IDS = [
+  'jonathan',
+  'budi',
+  'hendra',
+  'agus',
+  'dedi',
+  'fitri',
+  'siti',
+  'emp_01',
+  'emp_02',
+  'emp_04',
+  'emp_05',
+  'emp_07',
+  'emp_08',
+  'emp_09',
+  'emp_jonathan',
+  'emp_budi',
+  'emp_hendra',
+  'emp_agus',
+  'emp_dedi',
+  'emp_fitri',
+  'emp_siti'
+];
+
+export const NON_PPNPN_NAMES = [
+  'jonathan',
+  'budi santoso',
+  'hendra saputra',
+  'agus susanto',
+  'dedi kurniawan',
+  'fitri handayani',
+  'siti rahma'
+];
+
+export const isNonPpnpn = (id?: string | null, name?: string | null): boolean => {
+  const normId = (id || '').toLowerCase().trim();
+  const normName = (name || '').toLowerCase().trim();
+  if (normId && NON_PPNPN_IDS.includes(normId)) return true;
+  if (normName && NON_PPNPN_NAMES.some(n => normName === n || normName.includes(n))) return true;
+  return false;
+};
+
+// Default mock data to populate immediately
+export const DEFAULT_EMPLOYEES: Employee[] = [
+  {
+    id: "nauval",
+    name: "Nauval (Admin)",
+    email: "nauval@ppnpn.com",
+    role: "admin",
+    password: "123",
+    position: "Administrator",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
   {
     id: "admin1",
     name: "M. Yusrul Hana",
-    email: "adm:ini@hppn.com",
+    email: "admin1@ppnpn.com",
     role: "admin",
     password: "password123",
     position: "Kepala PPNPN",
     joinDate: "2024-01-15",
     cutiQuota: 12,
     status: "aktif"
-  },
-  {
-    id: "jonathan",
-    name: "Jonathan",
-    email: "jonathan",
-    role: "karyawan",
-    password: "password123",
-    position: "Staf Administrasi",
-    joinDate: "2024-02-10",
-    cutiQuota: 10,
-    status: "aktif"
-  },
-  {
-    id: "maliq",
-    name: "maliq",
-    email: "maliq@ppnpn.com",
-    role: "karyawan",
-    password: "password123",
-    position: "CS",
-    joinDate: "2024-01-01",
-    cutiQuota: 12,
-    status: "aktif"
-  },
-  {
-    id: "budi",
-    name: "Budi Santoso",
-    email: "budi@ppnpn.com",
-    role: "karyawan",
-    password: "password123",
-    position: "Staf IT (Lama)",
-    joinDate: "2023-05-10",
-    cutiQuota: 12,
-    status: "tidak aktif"
   },
   {
     id: "andi_admin",
@@ -57,34 +78,161 @@ const DEFAULT_EMPLOYEES: Employee[] = [
     status: "pindah"
   },
   {
+    id: "maliq",
+    name: "Maliq",
+    email: "maliq@ppnpn.com",
+    role: "pramubakti",
+    password: "password123",
+    position: "Pramubakti / Cleaning Service",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
+  {
     id: "robby",
     name: "ROBBY ANDAYANI",
     email: "robby@ppnpn.com",
-    role: "karyawan",
+    role: "security",
     password: "password123",
     position: "Security / Petugas Keamanan",
     joinDate: "2024-01-01",
     cutiQuota: 12,
+    shift: "pagi",
     status: "aktif"
   },
   {
     id: "ratmansyah",
     name: "RATMANSYAH",
     email: "ratmansyah@ppnpn.com",
-    role: "karyawan",
+    role: "security",
     password: "password123",
     position: "Security / Petugas Keamanan",
     joinDate: "2024-01-01",
     cutiQuota: 12,
+    shift: "pagi",
     status: "aktif"
   },
   {
     id: "arief",
     name: "MOH. ARIEF D",
     email: "arief@ppnpn.com",
-    role: "karyawan",
+    role: "security",
     password: "password123",
     position: "Security / Petugas Keamanan",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    shift: "pagi",
+    status: "aktif"
+  },
+  {
+    id: "zaza",
+    name: "ZSA ZSA ANINDYA PUTERI",
+    email: "zaza@ppnpn.com",
+    role: "pramubakti",
+    password: "password123",
+    position: "Pramubakti / Staf Administrasi",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
+  {
+    id: "rudi",
+    name: "Rudi Hartono",
+    email: "rudi@ppnpn.com",
+    role: "security",
+    password: "password123",
+    position: "Security / Petugas Keamanan",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    shift: "pagi",
+    status: "aktif"
+  },
+  {
+    id: "aditya",
+    name: "ADITYA PRATAMA",
+    email: "aditya@ppnpn.com",
+    role: "security",
+    password: "password123",
+    position: "Security / Petugas Keamanan",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    shift: "pagi",
+    status: "aktif"
+  },
+  {
+    id: "bambang",
+    name: "BAMBANG OETOYO PUTRA",
+    email: "bambang@ppnpn.com",
+    role: "sopir",
+    password: "password123",
+    position: "Pengemudi / Sopir",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
+  {
+    id: "agil",
+    name: "AGIL TRI SAPUTRA",
+    email: "agil@ppnpn.com",
+    role: "pramubakti",
+    password: "password123",
+    position: "Pramubakti",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
+  {
+    id: "reksi",
+    name: "REKSI JUMALIK",
+    email: "reksi@ppnpn.com",
+    role: "pramubakti",
+    password: "password123",
+    position: "Pramubakti",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
+  {
+    id: "rajab",
+    name: "ABDUL RAJAB",
+    email: "rajab@ppnpn.com",
+    role: "pramubakti",
+    password: "password123",
+    position: "Pramubakti",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
+  {
+    id: "nanda",
+    name: "NANDA FEBRIADI",
+    email: "nanda@ppnpn.com",
+    role: "pramubakti",
+    password: "password123",
+    position: "Pramubakti",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    status: "aktif"
+  },
+  {
+    id: "zainal",
+    name: "ZAINAL ERWIN",
+    email: "zainal@ppnpn.com",
+    role: "security",
+    password: "password123",
+    position: "Security / Petugas Keamanan",
+    joinDate: "2024-01-01",
+    cutiQuota: 12,
+    shift: "pagi",
+    status: "aktif"
+  },
+  {
+    id: "sinta",
+    name: "SINTA RAHMANING TIA",
+    email: "sinta@ppnpn.com",
+    role: "pramubakti",
+    password: "password123",
+    position: "Pramubakti",
     joinDate: "2024-01-01",
     cutiQuota: 12,
     status: "aktif"
@@ -175,7 +323,7 @@ const seedAttendance = (): Attendance[] => {
 
   const list = [...juneList, ...currentMonthList];
 
-  // Today's attendance before checking in (Jonathan has checked in for demo)
+  // Today's morning attendance record
   const getLocalDateString = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -185,13 +333,13 @@ const seedAttendance = (): Attendance[] => {
   };
   const todayDateStr = getLocalDateString();
 
-  if (!list.some(a => a.employeeId === 'jonathan' && a.date === todayDateStr)) {
+  if (!list.some(a => a.employeeId === 'maliq' && a.date === todayDateStr)) {
     list.push({
-      id: `att_jonathan_${todayDateStr}`,
-      employeeId: "jonathan",
-      employeeName: "Jonathan",
+      id: `att_maliq_${todayDateStr}`,
+      employeeId: "maliq",
+      employeeName: "Maliq",
       date: todayDateStr,
-      checkIn: "08:15",
+      checkIn: "07:30",
       checkOut: null,
       checkInPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
       checkOutPhoto: null,
@@ -221,19 +369,19 @@ const DEFAULT_LEAVES: LeaveRequest[] = [
   },
   {
     id: "leave2",
-    employeeId: "jonathan",
-    employeeName: "Jonathan",
+    employeeId: "robby",
+    employeeName: "ROBBY ANDAYANI",
     type: "Izin",
     startDate: "2026-06-25",
     endDate: "2026-06-25",
-    reason: "Mengurus perpanjangan SIM",
+    reason: "Mengurus keperluan keluarga",
     status: "Pending",
     createdAt: "2026-06-23T11:30:00"
   },
   {
     id: "leave3",
-    employeeId: "jonathan",
-    employeeName: "Jonathan",
+    employeeId: "ratmansyah",
+    employeeName: "RATMANSYAH",
     type: "Sakit",
     startDate: "2026-06-22",
     endDate: "2026-06-22",
@@ -249,10 +397,10 @@ const generateSimulatedLogbooks = (year: number, month: number, maxDay: number):
   const list: Logbook[] = [];
   const monthStr = month < 10 ? `0${month}` : `${month}`;
   const emps = [
-    { id: 'jonathan', name: 'Jonathan' },
-    { id: 'maliq', name: 'maliq' },
+    { id: 'maliq', name: 'Maliq' },
     { id: 'robby', name: 'ROBBY ANDAYANI' },
-    { id: 'ratmansyah', name: 'RATMANSYAH' }
+    { id: 'ratmansyah', name: 'RATMANSYAH' },
+    { id: 'rudi', name: 'Rudi Hartono' }
   ];
   const sampleTasks = [
     "Melaksanakan tugas rutin PPNPN harian dan pelaporan berkas fisik.",
@@ -298,23 +446,23 @@ const getInitialLogbooks = (): Logbook[] => {
     {
       id: "log1",
       employeeId: "maliq",
-      employeeName: "maliq",
+      employeeName: "Maliq",
       date: "2026-06-24",
       time: "08:15 AM",
       content: "Catat detail daily log summ."
     },
     {
       id: "log2",
-      employeeId: "jonathan",
-      employeeName: "Jonathan",
+      employeeId: "robby",
+      employeeName: "ROBBY ANDAYANI",
       date: "2026-06-24",
-      time: "03:30 AM",
-      content: "Catat detail daily log summ."
+      time: "07:30 AM",
+      content: "Pemeriksaan area kantor dan buku tamu pos keamanan."
     },
     ...Array.from({ length: 13 }).map((_, i) => ({
       id: `log_mock_${i}`,
-      employeeId: ["jonathan", "maliq"][i % 2],
-      employeeName: ["Jonathan", "maliq"][i % 2],
+      employeeId: ["robby", "maliq"][i % 2],
+      employeeName: ["ROBBY ANDAYANI", "Maliq"][i % 2],
       date: `2026-06-${(i + 1) < 10 ? `0${i + 1}` : i + 1}`,
       time: "17:15",
       content: "Melaksanakan tugas rutin PPNPN harian dan pelaporan berkas fisik."
@@ -452,99 +600,50 @@ export const getStoredData = () => {
   }
 
   let parsedEmployees = JSON.parse(employees) as Employee[];
-  // Dynamic filter out of Robert and Lucas on load
-  parsedEmployees = parsedEmployees.filter(e => e.id !== 'robert' && e.id !== 'lucas');
+  // Dynamic filter out of non-PPNPN (Jonathan, Budi, Hendra, Agus, Dedi, Fitri, Siti, Robert, Lucas)
+  parsedEmployees = parsedEmployees.filter(e => !isNonPpnpn(e.id, e.name) && e.id !== 'robert' && e.id !== 'lucas');
 
-  // Assign default status of 'aktif' to any employee without status
-  parsedEmployees = parsedEmployees.map(e => ({
-    ...e,
-    status: e.status || 'aktif'
-  }));
+  // Assign specific roles and default status of 'aktif' to any employee without status
+  parsedEmployees = parsedEmployees.map(e => {
+    let r = e.role;
+    const pos = (e.position || '').toLowerCase();
+    if (!r || r === 'karyawan') {
+      if (pos.includes('satpam') || pos.includes('security') || pos.includes('keamanan') || pos.includes('penjaga')) {
+        r = 'security';
+      } else if (pos.includes('sopir') || pos.includes('pengemudi') || pos.includes('driver')) {
+        r = 'sopir';
+      } else if (r !== 'admin') {
+        r = 'pramubakti';
+      }
+    }
+    return {
+      ...e,
+      role: r,
+      shift: r === 'security' ? (e.shift || 'pagi') : e.shift,
+      status: e.status || 'aktif'
+    };
+  });
 
-  if (!parsedEmployees.some(e => e.id === 'budi')) {
-    parsedEmployees.push({
-      id: "budi",
-      name: "Budi Santoso",
-      email: "budi@ppnpn.com",
-      role: "karyawan",
-      password: "password123",
-      position: "Staf IT (Lama)",
-      joinDate: "2023-05-10",
-      cutiQuota: 12,
-      status: "tidak aktif"
-    });
+  // Ensure all genuine PPNPN and admin accounts are present if not yet registered
+  for (const defEmp of DEFAULT_EMPLOYEES) {
+    const existing = parsedEmployees.find(e => e.id.toLowerCase() === defEmp.id.toLowerCase());
+    if (!existing) {
+      const nameMatch = parsedEmployees.find(e => e.name && defEmp.name && e.name.toLowerCase() === defEmp.name.toLowerCase());
+      if (!nameMatch) {
+        parsedEmployees.push({ ...defEmp });
+      }
+    } else {
+      // Retain edited employee properties while ensuring required fields exist
+      if (!existing.password) existing.password = defEmp.password;
+      if (!existing.position) existing.position = defEmp.position;
+      if (!existing.role || existing.role === 'karyawan') existing.role = defEmp.role;
+      if (existing.role === 'security' && !existing.shift) existing.shift = defEmp.shift || 'pagi';
+      if (typeof existing.cutiQuota !== 'number') existing.cutiQuota = defEmp.cutiQuota;
+    }
   }
 
-  if (!parsedEmployees.some(e => e.id === 'andi_admin')) {
-    parsedEmployees.push({
-      id: "andi_admin",
-      name: "Andi Wijaya",
-      email: "andi@ppnpn.com",
-      role: "admin",
-      password: "password123",
-      position: "Kepala Bagian (Mutasi)",
-      joinDate: "2022-03-15",
-      cutiQuota: 12,
-      status: "pindah"
-    });
-  }
-
-  if (!parsedEmployees.some(e => e.name.toLowerCase().includes('robby'))) {
-    parsedEmployees.push({
-      id: "robby",
-      name: "ROBBY ANDAYANI",
-      email: "robby@ppnpn.com",
-      role: "karyawan",
-      password: "password123",
-      position: "Security / Petugas Keamanan",
-      joinDate: "2024-01-01",
-      cutiQuota: 12,
-      status: "aktif"
-    });
-  }
-
-  if (!parsedEmployees.some(e => e.name.toLowerCase().includes('ratmansyah') || e.id.toLowerCase() === 'ratmansyah')) {
-    parsedEmployees.push({
-      id: "ratmansyah",
-      name: "RATMANSYAH",
-      email: "ratmansyah@ppnpn.com",
-      role: "karyawan",
-      password: "password123",
-      position: "Security / Petugas Keamanan",
-      joinDate: "2024-01-01",
-      cutiQuota: 12,
-      status: "aktif"
-    });
-  }
-
-  if (!parsedEmployees.some(e => e.name.toLowerCase().includes('arief') || e.id.toLowerCase() === 'arief')) {
-    parsedEmployees.push({
-      id: "arief",
-      name: "MOH. ARIEF D",
-      email: "arief@ppnpn.com",
-      role: "karyawan",
-      password: "password123",
-      position: "Security / Petugas Keamanan",
-      joinDate: "2024-01-01",
-      cutiQuota: 12,
-      status: "aktif"
-    });
-  }
-
-  if (!parsedEmployees.some(e => e.id.toLowerCase() === 'maliq')) {
-    parsedEmployees.push({
-      id: "maliq",
-      name: "maliq",
-      email: "maliq@ppnpn.com",
-      role: "karyawan",
-      password: "password123",
-      position: "CS",
-      joinDate: "2024-01-01",
-      cutiQuota: 12,
-      status: "aktif"
-    });
-  }
-
+  // Ensure non-PPNPN entries are strictly removed from cached storage
+  parsedEmployees = parsedEmployees.filter(e => !isNonPpnpn(e.id, e.name));
   safeSetLocalStorageItem(KEYS.EMPLOYEES, parsedEmployees);
 
   let parsedAttendance: Attendance[] = [];
@@ -553,6 +652,8 @@ export const getStoredData = () => {
   } catch (e) {
     parsedAttendance = [];
   }
+  // Sanitize attendance to remove non-PPNPN
+  parsedAttendance = parsedAttendance.filter(a => !isNonPpnpn(a.employeeId, a.employeeName));
 
   const getLocalDateString = () => {
     const d = new Date();
@@ -564,45 +665,52 @@ export const getStoredData = () => {
   const todayDateStr = getLocalDateString();
 
   if (!isResetAttendance) {
-    if (!parsedAttendance.some(att => (att.employeeId?.toLowerCase() === 'ratmansyah' || att.employeeName?.toLowerCase().includes('ratmansyah')) && att.date === todayDateStr)) {
-      parsedAttendance.push({
-        id: `att_ratmansyah_${todayDateStr}`,
-        employeeId: "ratmansyah",
-        employeeName: "RATMANSYAH",
-        date: todayDateStr,
-        checkIn: "07:30",
-        checkOut: null,
-        checkInPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
-        checkOutPhoto: null,
-        checkInLocation: { lat: 0.4735, lng: 101.4478 },
-        checkOutLocation: null,
-        checkInAddress: "Kantor Pekanbaru",
-        checkOutAddress: null,
-        checkInStatus: 'Tepat Waktu',
-        checkOutStatus: null,
-        shift: 'pagi'
-      });
-      safeSetLocalStorageItem(KEYS.ATTENDANCE, parsedAttendance);
-    }
+    // Complete morning attendance records for genuine PPNPN present this morning
+    const morningCheckIns = [
+      { id: 'ratmansyah', name: 'RATMANSYAH', time: '07:15', shift: 'pagi' as const },
+      { id: 'arief', name: 'MOH. ARIEF D', time: '07:20', shift: 'pagi' as const },
+      { id: 'robby', name: 'ROBBY ANDAYANI', time: '07:25', shift: 'pagi' as const },
+      { id: 'rudi', name: 'Rudi Hartono', time: '07:10', shift: 'pagi' as const },
+      { id: 'maliq', name: 'Maliq', time: '07:30' },
+      { id: 'zaza', name: 'ZSA ZSA ANINDYA PUTERI', time: '07:50' },
+      { id: 'aditya', name: 'ADITYA PRATAMA', time: '07:12', shift: 'pagi' as const },
+      { id: 'bambang', name: 'BAMBANG OETOYO PUTRA', time: '07:35' },
+      { id: 'agil', name: 'AGIL TRI SAPUTRA', time: '07:28' },
+      { id: 'reksi', name: 'REKSI JUMALIK', time: '07:32' },
+      { id: 'rajab', name: 'ABDUL RAJAB', time: '07:22' },
+      { id: 'nanda', name: 'NANDA FEBRIADI', time: '07:38' },
+      { id: 'zainal', name: 'ZAINAL ERWIN', time: '07:18', shift: 'pagi' as const },
+      { id: 'sinta', name: 'SINTA RAHMANING TIA', time: '07:42' }
+    ];
 
-    if (!parsedAttendance.some(att => (att.employeeId?.toLowerCase() === 'arief' || att.employeeName?.toLowerCase().includes('arief')) && att.date === todayDateStr)) {
-      parsedAttendance.push({
-        id: `att_arief_${todayDateStr}`,
-        employeeId: "arief",
-        employeeName: "MOH. ARIEF D",
-        date: todayDateStr,
-        checkIn: "07:15",
-        checkOut: null,
-        checkInPhoto: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150",
-        checkOutPhoto: null,
-        checkInLocation: { lat: 0.4735, lng: 101.4478 },
-        checkOutLocation: null,
-        checkInAddress: "Kantor Pekanbaru",
-        checkOutAddress: null,
-        checkInStatus: 'Tepat Waktu',
-        checkOutStatus: null,
-        shift: 'pagi'
-      });
+    let attendanceAdded = false;
+    for (const m of morningCheckIns) {
+      const hasRecord = parsedAttendance.some(att => 
+        (att.employeeId?.toLowerCase() === m.id.toLowerCase() || att.employeeName?.toLowerCase().includes(m.name.toLowerCase())) &&
+        att.date === todayDateStr
+      );
+      if (!hasRecord) {
+        parsedAttendance.push({
+          id: `att_${m.id}_${todayDateStr}`,
+          employeeId: m.id,
+          employeeName: m.name,
+          date: todayDateStr,
+          checkIn: m.time,
+          checkOut: null,
+          checkInPhoto: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
+          checkOutPhoto: null,
+          checkInLocation: { lat: 0.4735, lng: 101.4478 },
+          checkOutLocation: null,
+          checkInAddress: "Kantor Wilayah DJPb Provinsi Riau (Pekanbaru)",
+          checkOutAddress: null,
+          checkInStatus: 'Tepat Waktu',
+          checkOutStatus: null,
+          shift: m.shift
+        });
+        attendanceAdded = true;
+      }
+    }
+    if (attendanceAdded) {
       safeSetLocalStorageItem(KEYS.ATTENDANCE, parsedAttendance);
     }
   }
@@ -615,7 +723,7 @@ export const getStoredData = () => {
 
   if (!isResetAttendance && !parsedAttendance.some(att => att.date && att.date.startsWith(curMonthPrefix))) {
     const curMonthAtt = generateSimulatedAttendance(curYear, curMonth, Math.max(1, now.getDate()));
-    parsedAttendance = [...parsedAttendance, ...curMonthAtt];
+    parsedAttendance = [...parsedAttendance, ...curMonthAtt].filter(a => !isNonPpnpn(a.employeeId, a.employeeName));
     safeSetLocalStorageItem(KEYS.ATTENDANCE, parsedAttendance);
   }
 
@@ -625,6 +733,8 @@ export const getStoredData = () => {
   } catch (e) {
     parsedLeaves = [];
   }
+  parsedLeaves = parsedLeaves.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
+  safeSetLocalStorageItem(KEYS.LEAVES, parsedLeaves);
 
   let parsedLogbooks: Logbook[] = [];
   try {
@@ -632,11 +742,12 @@ export const getStoredData = () => {
   } catch (e) {
     parsedLogbooks = [];
   }
+  parsedLogbooks = parsedLogbooks.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
 
   // Ensure current running month (bulan berjalan) has logbook records
   if (!isResetLogbooks && !parsedLogbooks.some(log => log.date && log.date.startsWith(curMonthPrefix))) {
     const curMonthLogs = generateSimulatedLogbooks(curYear, curMonth, Math.max(1, now.getDate()));
-    parsedLogbooks = [...parsedLogbooks, ...curMonthLogs];
+    parsedLogbooks = [...parsedLogbooks, ...curMonthLogs].filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
     safeSetLocalStorageItem(KEYS.LOGBOOKS, parsedLogbooks);
   }
 

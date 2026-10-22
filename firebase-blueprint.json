@@ -1,0 +1,126 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Master data pegawai PPNPN dan administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unik pegawai / username" },
+        "name": { "type": "string", "description": "Nama lengkap pegawai PPNPN" },
+        "email": { "type": "string", "description": "Email pegawai" },
+        "role": { "type": "string", "enum": ["admin", "karyawan"], "description": "Peran pengguna" },
+        "password": { "type": "string", "description": "Kata sandi akun" },
+        "position": { "type": "string", "description": "Jabatan pegawai PPNPN" },
+        "photo_url": { "type": "string", "description": "URL foto profil" },
+        "join_date": { "type": "string", "description": "Tanggal mulai bergabung (YYYY-MM-DD)" },
+        "cuti_quota": { "type": "number", "description": "Sisa kuota cuti tahunan" },
+        "shift": { "type": "string", "description": "Shift kerja untuk security (pagi/malam)" },
+        "status": { "type": "string", "enum": ["aktif", "pindah", "tidak aktif"], "description": "Status kepegawaian" }
+      },
+      "required": ["id", "name", "email", "role", "password", "position"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Data presensi harian PPNPN",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unik rekaman presensi" },
+        "employee_id": { "type": "string", "description": "ID pegawai PPNPN" },
+        "employee_name": { "type": "string", "description": "Nama pegawai PPNPN" },
+        "date": { "type": "string", "description": "Tanggal presensi (YYYY-MM-DD)" },
+        "check_in": { "type": "string", "description": "Waktu masuk kerja (HH:MM)" },
+        "check_out": { "type": "string", "description": "Waktu pulang kerja (HH:MM)" },
+        "check_in_photo": { "type": "string", "description": "URL foto swafoto masuk" },
+        "check_out_photo": { "type": "string", "description": "URL foto swafoto pulang" },
+        "check_in_location": { "type": "string", "description": "Koordinat lokasi masuk (JSON string)" },
+        "check_out_location": { "type": "string", "description": "Koordinat lokasi pulang (JSON string)" },
+        "check_in_address": { "type": "string", "description": "Alamat lokasi presensi masuk" },
+        "check_out_address": { "type": "string", "description": "Alamat lokasi presensi pulang" },
+        "check_in_status": { "type": "string", "description": "Status ketepatan waktu masuk" },
+        "check_out_status": { "type": "string", "description": "Status kepulangan" },
+        "logbook_notes": { "type": "string", "description": "Catatan singkat aktivitas presensi" },
+        "shift": { "type": "string", "description": "Shift saat absen (pagi/malam)" }
+      },
+      "required": ["id", "employee_id", "date"]
+    },
+    "LeaveRequest": {
+      "title": "LeaveRequest",
+      "description": "Permohonan cuti, izin, atau sakit pegawai PPNPN",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unik permohonan cuti" },
+        "employee_id": { "type": "string", "description": "ID pegawai pemohon" },
+        "employee_name": { "type": "string", "description": "Nama pegawai pemohon" },
+        "type": { "type": "string", "description": "Jenis permohonan (Cuti/Izin/Sakit)" },
+        "start_date": { "type": "string", "description": "Tanggal awal cuti (YYYY-MM-DD)" },
+        "end_date": { "type": "string", "description": "Tanggal akhir cuti (YYYY-MM-DD)" },
+        "reason": { "type": "string", "description": "Alasan pengajuan cuti" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"], "description": "Status persetujuan" },
+        "created_at": { "type": "string", "description": "Waktu pengajuan dibuat" },
+        "approved_by": { "type": "string", "description": "Nama pejabat penyetuju" },
+        "approved_date": { "type": "string", "description": "Tanggal disetujui" },
+        "work_days": { "type": "number", "description": "Jumlah hari kerja cuti" },
+        "address": { "type": "string", "description": "Alamat selama menjalankan cuti" },
+        "backup1": { "type": "string", "description": "Petugas pengganti 1" },
+        "backup2": { "type": "string", "description": "Petugas pengganti 2" }
+      },
+      "required": ["id", "employee_id", "type", "start_date", "end_date", "status"]
+    },
+    "Logbook": {
+      "title": "Logbook",
+      "description": "Laporan logbook kegiatan kerja harian PPNPN",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unik entri logbook" },
+        "employee_id": { "type": "string", "description": "ID pegawai pembuat" },
+        "employee_name": { "type": "string", "description": "Nama pegawai pembuat" },
+        "date": { "type": "string", "description": "Tanggal kegiatan (YYYY-MM-DD)" },
+        "time": { "type": "string", "description": "Waktu kegiatan (HH:MM)" },
+        "content": { "type": "string", "description": "Uraian tugas atau pekerjaan" },
+        "status": { "type": "string", "description": "Status verifikasi logbook" },
+        "approved_by": { "type": "string", "description": "Penyetuju logbook" }
+      },
+      "required": ["id", "employee_id", "date", "content"]
+    },
+    "OfficeSettings": {
+      "title": "OfficeSettings",
+      "description": "Konfigurasi sistem presensi kantor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unik konfigurasi (current_settings)" },
+        "check_in_start": { "type": "string", "description": "Jam mulai presensi masuk" },
+        "check_in_end": { "type": "string", "description": "Batas jam presensi masuk" },
+        "check_out_start": { "type": "string", "description": "Jam mulai presensi pulang" },
+        "office_lat": { "type": "number", "description": "Latitude kantor" },
+        "office_lng": { "type": "number", "description": "Longitude kantor" },
+        "office_radius_meters": { "type": "number", "description": "Radius presensi dalam meter" },
+        "office_name": { "type": "string", "description": "Nama instansi/kantor" },
+        "sheet_id": { "type": "string", "description": "ID Google Spreadsheet" },
+        "script_url": { "type": "string", "description": "URL Google Apps Script" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/ppnpn_employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Koleksi data master pegawai PPNPN dan administrator"
+    },
+    "/ppnpn_attendance/{attendanceId}": {
+      "schema": "Attendance",
+      "description": "Koleksi data presensi harian pegawai PPNPN"
+    },
+    "/ppnpn_leaves/{leaveId}": {
+      "schema": "LeaveRequest",
+      "description": "Koleksi permohonan cuti, sakit, dan izin pegawai"
+    },
+    "/ppnpn_logbooks/{logbookId}": {
+      "schema": "Logbook",
+      "description": "Koleksi catatan aktivitas harian logbook PPNPN"
+    },
+    "/ppnpn_settings/{settingsId}": {
+      "schema": "OfficeSettings",
+      "description": "Koleksi pengaturan jam dan radius presensi kantor"
+    }
+  }
+}

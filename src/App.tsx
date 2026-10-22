@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getStoredData, saveEmployees, saveAttendance, saveLeaves, saveLogbooks, saveSettings, safeSetLocalStorageItem } from './utils/storage';
+import { getStoredData, saveEmployees, saveAttendance, saveLeaves, saveLogbooks, saveSettings, safeSetLocalStorageItem, isNonPpnpn, NON_PPNPN_IDS } from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
 import { 
   checkSupabaseConnection,
@@ -15,11 +15,14 @@ import {
   upsertLogbookToSupabase,
   upsertSettingsToSupabase,
   upsertOvertimeToSupabase,
+  subscribeToAttendanceFromSupabase,
+  subscribeToEmployeesFromSupabase,
   deleteEmployeeFromSupabase,
   deleteLeaveFromSupabase,
   deleteAttendanceFromSupabase,
   clearTransactionsFromSupabase,
   resetAllEmployeeQuotasInSupabase,
+  purgeNonPpnpnFromSupabase,
   isSupabaseQuotaExceeded,
   SQL_CREATION_SCRIPT
 } from './utils/supabase';
@@ -109,33 +112,38 @@ export default function App() {
       setLogbooks(data.logbooks);
       setSettings(data.settings);
 
-      // Check if quota limit was previously marked
-      if (isSupabaseQuotaExceeded()) {
-        setIsQuotaExceeded(true);
-        setSupabaseConnected(false);
-        return;
-      }
+      // Clean up legacy global quota key
+      try {
+        localStorage.removeItem('firebase_firestore_quota_exceeded_date');
+      } catch {}
 
-      // 2. Validate connection to Supabase and perform data synchronization
+      // 2. Validate connection to Firebase and perform data synchronization
       const isConnected = await checkSupabaseConnection();
       setSupabaseConnected(isConnected);
-
-      if (isSupabaseQuotaExceeded()) {
-        setIsQuotaExceeded(true);
-        setSupabaseConnected(false);
-        return;
-      }
+      setIsQuotaExceeded(isSupabaseQuotaExceeded());
 
       if (isConnected) {
         setIsSyncingSupabase(true);
         try {
+          // Immediately purge non-PPNPN records in the background
+          purgeNonPpnpnFromSupabase().catch(() => {});
+
           // Sync Employees
-          const dbEmps = await getEmployeesFromSupabase();
-          if (dbEmps && dbEmps.length > 0) {
+          const rawDbEmps = await getEmployeesFromSupabase();
+          const dbEmps = (rawDbEmps || []).filter(e => !isNonPpnpn(e.id, e.name));
+          
+          // Delete any non-PPNPNs discovered in remote database
+          (rawDbEmps || []).forEach(e => {
+            if (isNonPpnpn(e.id, e.name)) {
+              deleteEmployeeFromSupabase(e.id).catch(() => {});
+            }
+          });
+
+          if (dbEmps.length > 0) {
             const empMap = new Map<string, Employee>();
-            data.employees.forEach(e => empMap.set(e.id.toLowerCase(), e));
+            data.employees.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => empMap.set(e.id.toLowerCase(), e));
             dbEmps.forEach(e => empMap.set(e.id.toLowerCase(), e));
-            const mergedEmps = Array.from(empMap.values());
+            const mergedEmps = Array.from(empMap.values()).filter(e => !isNonPpnpn(e.id, e.name));
             setEmployees(mergedEmps);
             safeSetLocalStorageItem('ppnpn_employees', mergedEmps);
             if (!isSupabaseQuotaExceeded()) {
@@ -145,16 +153,18 @@ export default function App() {
                 }
               }
             }
-          } else if (dbEmps && dbEmps.length === 0 && data.employees.length > 0) {
+          } else if (data.employees.length > 0) {
+            const validEmps = data.employees.filter(e => !isNonPpnpn(e.id, e.name));
             if (!isSupabaseQuotaExceeded()) {
-              for (const emp of data.employees) {
+              for (const emp of validEmps) {
                 await upsertEmployeeToSupabase(emp);
               }
             }
           }
 
           // Sync Regular Attendance
-          const dbAtt = await getAttendanceFromSupabase();
+          const rawDbAtt = await getAttendanceFromSupabase();
+          const dbAtt = (rawDbAtt || []).filter(att => !isNonPpnpn(att.employeeId, att.employeeName));
           if (dbAtt) {
             const attMap = new Map<string, Attendance>();
             const getAttKey = (att: Attendance) => {
@@ -162,7 +172,7 @@ export default function App() {
               return `${empKey}_${att.date}`;
             };
 
-            data.attendance.forEach(att => attMap.set(getAttKey(att), { ...att }));
+            data.attendance.filter(a => !isNonPpnpn(a.employeeId, a.employeeName)).forEach(att => attMap.set(getAttKey(att), { ...att }));
 
             dbAtt.forEach(att => {
               const key = getAttKey(att);
@@ -189,7 +199,7 @@ export default function App() {
               }
             });
 
-            const mergedAttendance = Array.from(attMap.values());
+            const mergedAttendance = Array.from(attMap.values()).filter(a => !isNonPpnpn(a.employeeId, a.employeeName));
             setAttendance(mergedAttendance);
             safeSetLocalStorageItem('ppnpn_attendance', mergedAttendance);
 
@@ -203,27 +213,31 @@ export default function App() {
           }
 
           // Sync Leaves
-          const dbLeaves = await getLeavesFromSupabase();
+          const rawDbLeaves = await getLeavesFromSupabase();
+          const dbLeaves = (rawDbLeaves || []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
           if (dbLeaves && dbLeaves.length > 0) {
             setLeaves(dbLeaves);
             const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
             safeSetLocalStorageItem('ppnpn_leaves', filteredLeaves);
-          } else if (dbLeaves && dbLeaves.length === 0 && data.leaves.length > 0) {
+          } else if (rawDbLeaves && rawDbLeaves.length === 0 && data.leaves.length > 0) {
+            const validLeaves = data.leaves.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
             if (!isSupabaseQuotaExceeded()) {
-              for (const leave of data.leaves) {
+              for (const leave of validLeaves) {
                 await upsertLeaveToSupabase(leave);
               }
             }
           }
 
           // Sync Logbooks
-          const dbLogs = await getLogbooksFromSupabase();
+          const rawDbLogs = await getLogbooksFromSupabase();
+          const dbLogs = (rawDbLogs || []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
           if (dbLogs && dbLogs.length > 0) {
             setLogbooks(dbLogs);
             safeSetLocalStorageItem('ppnpn_logbooks', dbLogs);
-          } else if (dbLogs && dbLogs.length === 0 && data.logbooks.length > 0) {
+          } else if (rawDbLogs && rawDbLogs.length === 0 && data.logbooks.length > 0) {
+            const validLogs = data.logbooks.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
             if (!isSupabaseQuotaExceeded()) {
-              for (const log of data.logbooks) {
+              for (const log of validLogs) {
                 await upsertLogbookToSupabase(log);
               }
             }
@@ -271,6 +285,38 @@ export default function App() {
     };
 
     loadAllData();
+
+    // Attach real-time cloud listeners for live instant synchronization
+    const unsubAtt = subscribeToAttendanceFromSupabase((dbAtt) => {
+      if (dbAtt && dbAtt.length > 0) {
+        setAttendance(prev => {
+          const map = new Map<string, Attendance>();
+          const getKey = (att: Attendance) => `${(att.employeeId || att.employeeName || 'emp').toLowerCase()}_${att.date}`;
+          prev.filter(a => !isNonPpnpn(a.employeeId, a.employeeName)).forEach(a => map.set(getKey(a), a));
+          dbAtt.filter(a => !isNonPpnpn(a.employeeId, a.employeeName)).forEach(a => {
+            const k = getKey(a);
+            const ex = map.get(k);
+            map.set(k, ex ? { ...ex, ...a } : a);
+          });
+          const merged = Array.from(map.values()).filter(a => !isNonPpnpn(a.employeeId, a.employeeName));
+          safeSetLocalStorageItem('ppnpn_attendance', merged);
+          return merged;
+        });
+      }
+    });
+
+    const unsubEmp = subscribeToEmployeesFromSupabase((dbEmps) => {
+      if (dbEmps && dbEmps.length > 0) {
+        setEmployees(prev => {
+          const map = new Map<string, Employee>();
+          prev.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => map.set(e.id.toLowerCase(), e));
+          dbEmps.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => map.set(e.id.toLowerCase(), e));
+          const merged = Array.from(map.values()).filter(e => !isNonPpnpn(e.id, e.name));
+          safeSetLocalStorageItem('ppnpn_employees', merged);
+          return merged;
+        });
+      }
+    });
 
     // Setup gentle periodic polling sync (every 15 minutes) only if not quota exceeded and tab is visible
     const interval = setInterval(async () => {
@@ -332,6 +378,10 @@ export default function App() {
     }, 900000); // 15 menit (hemat 87% kuota read harian)
 
     return () => {
+      try {
+        if (typeof unsubAtt === 'function') unsubAtt();
+        if (typeof unsubEmp === 'function') unsubEmp();
+      } catch {}
       clearInterval(interval);
     };
   }, []);
@@ -559,72 +609,106 @@ export default function App() {
   };
 
   // Employee actions
-  const handleAddEmployee = (newEmp: Employee) => {
+  const handleAddEmployee = async (newEmp: Employee) => {
     const updated = [...employees, newEmp];
     setEmployees(updated);
     saveEmployees(updated);
-    upsertEmployeeToSupabase(newEmp);
+    try {
+      await upsertEmployeeToSupabase(newEmp, true);
+    } catch (err) {
+      console.warn("Gagal menyimpan pegawai baru ke Firebase:", err);
+    }
   };
 
-  const handleDeleteEmployee = (id: string) => {
-    const updated = employees.filter(e => e.id !== id);
+  const handleDeleteEmployee = async (id: string) => {
+    const updated = employees.filter(e => e.id.toLowerCase() !== id.toLowerCase());
     setEmployees(updated);
     saveEmployees(updated);
-    deleteEmployeeFromSupabase(id);
+    try {
+      await deleteEmployeeFromSupabase(id);
+    } catch (err) {
+      console.warn("Gagal menghapus pegawai dari Firebase:", err);
+    }
   };
 
-  const handleEditEmployee = (updatedEmp: Employee, oldId?: string) => {
-    const targetId = oldId || updatedEmp.id;
-    const updated = employees.map(e => e.id === targetId ? updatedEmp : e);
+  const handleEditEmployee = async (updatedEmp: Employee, oldId?: string) => {
+    const targetId = (oldId || updatedEmp.id).trim();
+    const targetLower = targetId.toLowerCase();
+
+    // 1. Update state and local storage
+    const exists = employees.some(e => e.id.toLowerCase() === targetLower);
+    const updated = exists
+      ? employees.map(e => e.id.toLowerCase() === targetLower ? updatedEmp : e)
+      : [...employees, updatedEmp];
+
     setEmployees(updated);
     saveEmployees(updated);
-    upsertEmployeeToSupabase(updatedEmp);
+
+    // 2. Persist to Firebase Firestore
+    try {
+      await upsertEmployeeToSupabase(updatedEmp, true);
+    } catch (err: any) {
+      console.error("Gagal memperbarui pegawai di Firebase Firestore:", err);
+    }
+
+    // 3. If ID changed (username renamed)
     if (oldId && oldId.toLowerCase() !== updatedEmp.id.toLowerCase()) {
-      deleteEmployeeFromSupabase(oldId);
-      // 1. Update Attendance
+      try {
+        await deleteEmployeeFromSupabase(oldId);
+      } catch (err) {
+        console.warn("Gagal menghapus ID lama di Firebase:", err);
+      }
+
+      // Update Attendance records with oldId
       const updatedAttendance = attendance.map(att => {
-        if (att.employeeId === oldId) {
-          return {
+        if (att.employeeId?.toLowerCase() === oldId.toLowerCase()) {
+          const newAtt = {
             ...att,
             employeeId: updatedEmp.id,
             employeeName: updatedEmp.name,
-            id: att.id === `att_${oldId}_${att.date}` ? `att_${updatedEmp.id}_${att.date}` : att.id
+            id: att.id.startsWith(`att_${oldId}_`) ? `att_${updatedEmp.id}_${att.date}` : att.id
           };
+          upsertAttendanceToSupabase(newAtt).catch(() => {});
+          return newAtt;
         }
         return att;
       });
       setAttendance(updatedAttendance);
       saveAttendance(updatedAttendance);
 
-      // 2. Update Leaves
+      // Update Leaves records with oldId
       const updatedLeaves = leaves.map(leave => {
-        if (leave.employeeId === oldId) {
-          return {
+        if (leave.employeeId?.toLowerCase() === oldId.toLowerCase()) {
+          const newLeave = {
             ...leave,
             employeeId: updatedEmp.id,
             employeeName: updatedEmp.name
           };
+          upsertLeaveToSupabase(newLeave).catch(() => {});
+          return newLeave;
         }
         return leave;
       });
       setLeaves(updatedLeaves);
       saveLeaves(updatedLeaves);
 
-      // 3. Update Logbooks
+      // Update Logbooks records with oldId
       const updatedLogbooks = logbooks.map(log => {
-        if (log.employeeId === oldId) {
-          return {
+        if (log.employeeId?.toLowerCase() === oldId.toLowerCase()) {
+          const newLog = {
             ...log,
             employeeId: updatedEmp.id,
             employeeName: updatedEmp.name
           };
+          upsertLogbookToSupabase(newLog).catch(() => {});
+          return newLog;
         }
         return log;
       });
       setLogbooks(updatedLogbooks);
       saveLogbooks(updatedLogbooks);
 
-      // 4. Overtime requests key renaming in localStorage
+      // Overtime requests key renaming in localStorage
       const oldRequestsKey = `overtime_requests_${oldId}`;
       const newRequestsKey = `overtime_requests_${updatedEmp.id}`;
       const oldRequestsData = localStorage.getItem(oldRequestsKey);
@@ -633,13 +717,13 @@ export default function App() {
         localStorage.removeItem(oldRequestsKey);
       }
 
-      // 5. Overtime Attendance Records in localStorage
+      // Overtime Attendance Records in localStorage
       const storedOvertime = localStorage.getItem('overtime_attendance_records');
       if (storedOvertime) {
         try {
           const records = JSON.parse(storedOvertime);
           const updatedRecords = records.map((rec: any) => {
-            if (rec.employeeId === oldId) {
+            if (rec.employeeId?.toLowerCase() === oldId.toLowerCase()) {
               return {
                 ...rec,
                 employeeId: updatedEmp.id,
@@ -655,11 +739,11 @@ export default function App() {
         }
       }
 
-      // Dispatch storage event to keep views updated
       window.dispatchEvent(new Event('storage'));
     }
 
-    if (currentUser && (currentUser.id === targetId || currentUser.id === updatedEmp.id)) {
+    // 4. Update currentUser if logged in user was modified
+    if (currentUser && (currentUser.id.toLowerCase() === targetLower || currentUser.id.toLowerCase() === updatedEmp.id.toLowerCase())) {
       setCurrentUser(updatedEmp);
     }
   };
@@ -1550,7 +1634,7 @@ export default function App() {
                   Batas kuota harian Firebase Firestore Free Tier (50.000 read/hari) telah tercapai. Aplikasi tetap berjalan normal dengan cache lokal perangkat. Kuota akan direset otomatis esok hari.
                 </span>
                 <a
-                  href="https://console.firebase.google.com/project/spry-petal-5dpgw/firestore/databases/ai-studio-aplikasiabsensip-8568cdb0-c19d-48d6-bd52-75ab38d147d5/data?openUpgradeDialog=true"
+                  href="https://console.firebase.google.com/project/sapariau-e99eb/firestore/databases/ai-studio-aplikasiabsensip-8568cdb0-c19d-48d6-bd52-75ab38d147d5/data?openUpgradeDialog=true"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 font-bold text-amber-900 underline hover:text-amber-700 ml-1"

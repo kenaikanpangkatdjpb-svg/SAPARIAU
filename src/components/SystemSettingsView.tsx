@@ -538,7 +538,7 @@ export default function SystemSettingsView({
                   Kuota baca harian gratis Firestore (50.000 read/hari) telah habis untuk hari ini. Aplikasi secara otomatis beroperasi dalam mode penyimpanan lokal (offline cache). Semua data Anda tetap aman dan dapat digunakan normal. Kuota gratis akan direset otomatis esok hari.
                 </p>
                 <a
-                  href="https://console.firebase.google.com/project/spry-petal-5dpgw/firestore/databases/ai-studio-aplikasiabsensip-8568cdb0-c19d-48d6-bd52-75ab38d147d5/data?openUpgradeDialog=true"
+                  href="https://console.firebase.google.com/project/sapariau-e99eb/firestore/databases/ai-studio-aplikasiabsensip-8568cdb0-c19d-48d6-bd52-75ab38d147d5/data?openUpgradeDialog=true"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-[10px] rounded border border-amber-500/30 uppercase tracking-wider transition-colors"

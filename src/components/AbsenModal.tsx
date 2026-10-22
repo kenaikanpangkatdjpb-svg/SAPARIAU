@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, MapPin, Upload, RefreshCw, X, CheckCircle, Navigation, ChevronLeft, History, Eye, Info, Clock, User } from 'lucide-react';
+import { Camera, MapPin, Upload, RefreshCw, X, CheckCircle, Navigation, ChevronLeft, History, Eye, Info, Clock, User, Shield } from 'lucide-react';
 import { Attendance, OfficeSettings, Employee } from '../types';
 import { uploadImageToDrive, compressImage } from '../utils/storage';
 
@@ -29,22 +29,16 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isSecurity = !!(user.position?.toLowerCase()?.includes('satpam') || 
+  const isSecurity = user.role === 'security' || !!(user.position?.toLowerCase()?.includes('satpam') || 
                      user.position?.toLowerCase()?.includes('security') || 
                      user.position?.toLowerCase()?.includes('keamanan') || 
                      user.position?.toLowerCase()?.includes('penjaga'));
 
-  const getDetectedShift = (): 'pagi' | 'malam' | null => {
-    if (!isSecurity) return null;
-    const now = new Date();
-    const hour = now.getHours();
-    if (hour >= 4 && hour < 13) {
-      return 'pagi';
-    }
-    return 'malam';
-  };
-
-  const detectedShift = getDetectedShift();
+  const [selectedShift, setSelectedShift] = useState<'pagi' | 'malam'>(() => {
+    if (user.shift) return user.shift;
+    const hour = new Date().getHours();
+    return (hour >= 4 && hour < 14) ? 'pagi' : 'malam';
+  });
 
   // Run dynamic clocks
   const [currentTime, setCurrentTime] = useState('09.59.13');
@@ -206,18 +200,20 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
         let endHour = 8;
         let endMinute = 15;
         
-        const activeShift = isSecurity ? detectedShift : user.shift;
-        if (activeShift === 'pagi') {
-          const shiftEndStr = settings?.securityShiftPagiEnd || "08:00";
-          const [h, m] = shiftEndStr.split(':').map(Number);
-          endHour = h;
-          endMinute = m;
-        } else if (activeShift === 'malam') {
-          const shiftEndStr = settings?.securityShiftMalamEnd || "16:00";
-          const [h, m] = shiftEndStr.split(':').map(Number);
-          endHour = h;
-          endMinute = m;
+        if (isSecurity) {
+          if (selectedShift === 'pagi') {
+            const shiftEndStr = settings?.securityShiftPagiEnd || "08:00";
+            const [h, m] = shiftEndStr.split(':').map(Number);
+            endHour = h;
+            endMinute = m;
+          } else {
+            const shiftEndStr = settings?.securityShiftMalamEnd || "19:00";
+            const [h, m] = shiftEndStr.split(':').map(Number);
+            endHour = h;
+            endMinute = m;
+          }
         } else {
+          // PPNPN Pramubakti and Sopir follow standard office hours
           const checkInEndStr = settings?.checkInEnd || "08:15";
           const [h, m] = checkInEndStr.split(':').map(Number);
           endHour = h;
@@ -252,7 +248,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
           checkInAddress: address,
           checkInStatus: checkInStatus(),
           logbookNotes: logbookText || undefined,
-          shift: detectedShift || undefined
+          shift: isSecurity ? selectedShift : undefined
         } : {
           checkOut: nowTime,
           checkOutPhoto: photoUrl,
@@ -396,7 +392,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
           </div>
 
           {/* Card 2: Assignment Info & Timeline & Action Button */}
-          <div className="bg-white rounded-[24px] p-5 shadow-[0_8px_30px_rgba(0,0,0,0.02)] border border-slate-100/80 space-y-4 flex-1 flex flex-col">
+          <div className="bg-white rounded-[24px] p-5 shadow-[0_8px_30px_rgba(0,0,0,0.02)] border border-slate-100/80 space-y-3.5 flex-1 flex flex-col">
             
             {/* WFO Badge & Eye Icon */}
             <div className="flex justify-between items-center select-none">
@@ -405,6 +401,57 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
               </span>
               <Eye onClick={() => setShowInfoPresensi(true)} className="w-5 h-5 text-sky-500 cursor-pointer hover:text-sky-600 transition-all active:scale-90" />
             </div>
+
+            {/* Role-Specific Work Schedule Header */}
+            {isSecurity ? (
+              <div className="bg-amber-50/90 border border-amber-200/80 rounded-2xl p-3 space-y-2 select-none">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-extrabold text-[11px] uppercase tracking-wider">
+                    <Shield className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Jadwal Shift Security</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-200/60 text-amber-900 font-mono">
+                    {selectedShift === 'pagi' 
+                      ? `${settings.securityShiftPagiStart || '07:00'} - ${settings.securityShiftPagiOut || '15:00'}` 
+                      : `${settings.securityShiftMalamStart || '19:00'} - ${settings.securityShiftMalamOut || '07:00'}`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 p-0.5 bg-amber-200/40 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedShift('pagi')}
+                    className={`py-1.5 text-[11px] font-extrabold rounded-lg transition-all ${
+                      selectedShift === 'pagi'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'text-amber-900 hover:bg-amber-300/40'
+                    }`}
+                  >
+                    Shift Pagi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedShift('malam')}
+                    className={`py-1.5 text-[11px] font-extrabold rounded-lg transition-all ${
+                      selectedShift === 'malam'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'text-amber-900 hover:bg-amber-300/40'
+                    }`}
+                  >
+                    Shift Malam
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-100/90 border border-slate-200/80 rounded-2xl px-3.5 py-2 flex items-center justify-between text-[11px] select-none">
+                <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                  <Clock className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Jam Kerja {user.role === 'sopir' ? 'Sopir' : 'Pramubakti'} (Standar)</span>
+                </div>
+                <span className="font-mono text-[10px] font-bold text-slate-600">
+                  {settings.checkInStart || '07:30'} - {settings.checkOutStart || '17:00'} WIB
+                </span>
+              </div>
+            )}
 
             {/* Lokasi Penugasan Text */}
             <div className="space-y-1">

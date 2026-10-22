@@ -20,10 +20,15 @@ export default function LoginScreen({ onLoginSuccess, employees }: LoginScreenPr
     e.preventDefault();
     if (!loginForm.id || !loginForm.password) return;
 
-    // Search by ID/Username or Email
+    // Search by ID/Username, Email, or Full Name
+    const query = loginForm.id.trim().toLowerCase();
     const foundUser = employees.find(
-      emp => (emp.id.toLowerCase() === loginForm.id.toLowerCase() || emp.email.toLowerCase() === loginForm.id.toLowerCase()) && 
-      emp.password === loginForm.password
+      emp => (
+        emp.id.toLowerCase() === query || 
+        emp.email.toLowerCase() === query ||
+        emp.name.toLowerCase() === query ||
+        emp.name.toLowerCase().includes(query)
+      ) && emp.password === loginForm.password
     );
 
     if (foundUser) {

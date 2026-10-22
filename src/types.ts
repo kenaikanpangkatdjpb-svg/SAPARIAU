@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'karyawan';
+export type Role = 'admin' | 'pramubakti' | 'sopir' | 'security' | 'karyawan';
 
 export interface Employee {
   id: string; // NIP or ID
