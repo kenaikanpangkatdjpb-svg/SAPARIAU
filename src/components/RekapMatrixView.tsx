@@ -55,7 +55,7 @@ export default function RekapMatrixView({ employees, attendance, leaves }: Rekap
   }, [selectedYear, selectedMonthNum]);
 
   const employeesList = useMemo(() => {
-    return employees.filter(e => e.role === 'karyawan');
+    return employees.filter(e => e.role !== 'admin');
   }, [employees]);
 
   // Helper to check for Indonesian National Holidays in 2026

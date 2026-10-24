@@ -96,9 +96,9 @@ export default function RekomendasiKIView({ user, employees }: RekomendasiKIView
     localStorage.setItem('kepatuhan_internal_findings', JSON.stringify(updated));
   };
 
-  // Filter Karyawan List for the Dropdown (role === 'karyawan')
+  // Filter Pegawai List for the Dropdown (role !== 'admin')
   const karyawanList = useMemo(() => {
-    return employees.filter(e => e.role === 'karyawan');
+    return employees.filter(e => e.role !== 'admin');
   }, [employees]);
 
   // Filtered Findings

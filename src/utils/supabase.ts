@@ -28,6 +28,7 @@ import {
   purgeNonPpnpnFromFirebase,
   getLastFirebaseError,
   isFirebaseQuotaExceeded,
+  forceFirebaseOnline,
   isQuotaError,
   mapEmployeeToDb,
   mapEmployeeFromDb,
@@ -79,6 +80,7 @@ export interface OvertimeAttendanceRecord {
 
 export const getLastSupabaseError = getLastFirebaseError;
 export const isSupabaseQuotaExceeded = isFirebaseQuotaExceeded;
+export const forceSupabaseOnline = forceFirebaseOnline;
 
 export const checkSupabaseConnection = checkFirebaseConnection;
 export const getEmployeesFromSupabase = getEmployeesFromFirebase;

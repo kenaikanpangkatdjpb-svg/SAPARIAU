@@ -13,7 +13,7 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
   const isAdmin = user.role === 'admin';
   
   const karyawanEmployees = useMemo(() => {
-    return employees.filter(e => e.role === 'karyawan');
+    return employees.filter(e => e.role !== 'admin');
   }, [employees]);
 
   const [selectedEmpId, setSelectedEmpId] = useState(
@@ -56,7 +56,7 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
         employees.some(e => 
           (e.id.toLowerCase() === att.employeeId?.toLowerCase() || 
            (e.name && att.employeeName && att.employeeName.toLowerCase().includes(e.name.toLowerCase()))) && 
-          e.role === 'karyawan'
+          e.role !== 'admin'
         ) || att.employeeName
       );
     } else {
@@ -97,7 +97,7 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
               className="text-xs font-bold px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:border-blue-500"
             >
               <option className="bg-white" value="all">Semua Pegawai PPNPN</option>
-              {employees.filter(e => e.role === 'karyawan').map(emp => (
+              {employees.filter(e => e.role !== 'admin').map(emp => (
                 <option className="bg-white" key={emp.id} value={emp.id}>
                   {emp.name} ({emp.id})
                 </option>
@@ -196,6 +196,11 @@ export default function DetailAbsensiView({ user, employees, attendance, onReset
                       }`}>
                         {att.checkInStatus || 'Clock Out'}
                       </span>
+                      {att.shift && (
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border bg-amber-50 text-amber-800 border-amber-200">
+                          {att.shift === 'Fleksibel' ? 'Fleksibel 24 Jam' : `Shift ${att.shift}`}
+                        </span>
+                      )}
                       {isAdmin && onResetAttendance && (
                         <button
                           onClick={async () => {

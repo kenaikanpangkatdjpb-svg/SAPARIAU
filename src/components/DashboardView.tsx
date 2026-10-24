@@ -16,7 +16,9 @@ import {
   Map,
   Briefcase,
   Camera,
-  Award
+  Award,
+  Shield,
+  Car
 } from 'lucide-react';
 
 const MONTH_OPTIONS = [
@@ -104,6 +106,50 @@ export default function DashboardView({
             </div>
 
             <div className="space-y-4 pt-1">
+              {/* Role Specific Work Schedule Banner */}
+              {user.role === 'security' || user.position?.toLowerCase().includes('satpam') || user.position?.toLowerCase().includes('security') ? (
+                <div className="bg-amber-50/90 border border-amber-200/80 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 select-none">
+                  <div className="flex items-center gap-2.5">
+                    <Shield className="w-4.5 h-4.5 text-amber-600 shrink-0" />
+                    <div>
+                      <p className="text-[10px] font-bold text-amber-950 uppercase tracking-wider">Jadwal Security: Fleksibel 24 Jam</p>
+                      <p className="text-xs font-semibold text-amber-800">
+                        Bebas jam bertugas (tanpa batasan shift). Presensi masuk & pulang tercatat otomatis kapan pun bertugas.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-extrabold px-3 py-1 bg-amber-200 text-amber-900 rounded-lg font-mono self-start sm:self-auto shrink-0 shadow-2xs">
+                    Fleksibel 24 Jam
+                  </span>
+                </div>
+              ) : user.role === 'sopir' ? (
+                <div className="bg-purple-50/90 border border-purple-200/80 p-3 rounded-xl flex items-center justify-between select-none">
+                  <div className="flex items-center gap-2">
+                    <Car className="w-4 h-4 text-purple-600 shrink-0" />
+                    <div>
+                      <p className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">Jadwal Kerja PPNPN Sopir</p>
+                      <p className="text-xs font-bold text-purple-800">Jam Kantor Standar: {settings.checkInStart || '07:30'} - {settings.checkOutStart || '17:00'} WIB</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-purple-200/60 text-purple-900 rounded-md">
+                    Non-Shift
+                  </span>
+                </div>
+              ) : (
+                <div className="bg-sky-50/90 border border-sky-200/80 p-3 rounded-xl flex items-center justify-between select-none">
+                  <div className="flex items-center gap-2">
+                    <Briefcase className="w-4 h-4 text-sky-600 shrink-0" />
+                    <div>
+                      <p className="text-[10px] font-bold text-sky-900 uppercase tracking-wider">Jadwal Kerja PPNPN Pramubakti</p>
+                      <p className="text-xs font-bold text-sky-800">Jam Kantor Standar: {settings.checkInStart || '07:30'} - {settings.checkOutStart || '17:00'} WIB</p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 bg-sky-200/60 text-sky-900 rounded-md">
+                    Non-Shift
+                  </span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">STATUS ABSENSI HARI INI</span>
                 <div className="flex gap-1.5">
@@ -194,7 +240,26 @@ export default function DashboardView({
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Jabatan PPNPN</p>
-                  <p className="text-xs font-bold text-slate-800 mt-0.5">{user.position || "CS"}</p>
+                  <p className="text-xs font-bold text-slate-800 mt-0.5">{user.position || "PPNPN"}</p>
+                </div>
+              </div>
+
+              {/* Peran / Kategori */}
+              <div className="flex items-center gap-3.5 p-1">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                  user.role === 'security'
+                    ? 'bg-amber-50 text-amber-600 border-amber-200'
+                    : user.role === 'sopir'
+                      ? 'bg-purple-50 text-purple-600 border-purple-200'
+                      : 'bg-sky-50 text-sky-600 border-sky-200'
+                }`}>
+                  {user.role === 'security' ? <Shield className="w-5 h-5" /> : user.role === 'sopir' ? <Car className="w-5 h-5" /> : <Briefcase className="w-5 h-5" />}
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Kategori Peran</p>
+                  <p className="text-xs font-bold text-slate-800 mt-0.5">
+                    {user.role === 'security' ? 'PPNPN Security' : user.role === 'sopir' ? 'PPNPN Sopir' : 'PPNPN Pramubakti'}
+                  </p>
                 </div>
               </div>
 
@@ -237,7 +302,7 @@ export default function DashboardView({
   }
 
   // Stats Calculations
-  const activeEmployeesCount = employees.filter(e => e.role === 'karyawan' && (e.status || 'aktif') === 'aktif').length;
+  const activeEmployeesCount = employees.filter(e => e.role !== 'admin' && (e.status || 'aktif') === 'aktif').length;
   
   const pendingLeavesCount = useMemo(() => {
     return leaves.filter(l => l.status === 'Pending').length;

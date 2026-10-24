@@ -77,7 +77,7 @@ export default function RekapLemburView({ employees, attendance, settings, leave
   }, [selectedMonthNum]);
 
   const employeesList = useMemo(() => {
-    return employees.filter(e => e.role === 'karyawan');
+    return employees.filter(e => e.role !== 'admin');
   }, [employees]);
 
   // Total days of selected month

@@ -55,7 +55,7 @@ export default function Header({ user, todayAttendance, settings, onOpenAbsenMod
     }
   }
 
-  const showAbsenButtons = user.role === 'karyawan';
+  const showAbsenButtons = user.role !== 'admin';
 
   return (
     <header 
@@ -78,19 +78,31 @@ export default function Header({ user, todayAttendance, settings, onOpenAbsenMod
             <h1 className="text-sm sm:text-base lg:text-lg font-bold text-slate-800 tracking-tight truncate max-w-[200px] xs:max-w-xs sm:max-w-md">
               Hai, <span className="font-extrabold text-slate-900">{user.name}</span>
             </h1>
-            {user.role === 'karyawan' && (
+            {user.role !== 'admin' && (
               <span className={`px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-wider shrink-0 ${badgeBg}`}>
                 {statusText}
               </span>
             )}
-            {user.role === 'karyawan' && todayAttendance?.checkInStatus === 'Terlambat' && (
+            {user.role !== 'admin' && todayAttendance?.checkInStatus === 'Terlambat' && (
               <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border border-amber-200 shrink-0">
                 Terlambat
               </span>
             )}
-            {user.role === 'admin' && (
+            {user.role === 'admin' ? (
               <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border border-indigo-200 shrink-0">
                 Administrator
+              </span>
+            ) : user.role === 'security' ? (
+              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border border-amber-300 shrink-0">
+                Security (Fleksibel)
+              </span>
+            ) : user.role === 'sopir' ? (
+              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border border-blue-300 shrink-0">
+                PPNPN Sopir
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border border-emerald-300 shrink-0">
+                PPNPN Pramubakti
               </span>
             )}
           </div>

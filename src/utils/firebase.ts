@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
   collection,
   doc,
   getDoc,
@@ -42,10 +43,22 @@ export const activeFirebaseConfig = getActiveFirebaseConfig();
 export const app = !getApps().length ? initializeApp(activeFirebaseConfig) : getApp();
 
 // Initialize Firestore with specific databaseId if provided
-export const db = getFirestore(
-  app,
-  (activeFirebaseConfig as any).firestoreDatabaseId || '(default)'
-);
+export const db = (() => {
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalAutoDetectLongPolling: true
+      },
+      (activeFirebaseConfig as any).firestoreDatabaseId || '(default)'
+    );
+  } catch {
+    return getFirestore(
+      app,
+      (activeFirebaseConfig as any).firestoreDatabaseId || '(default)'
+    );
+  }
+})();
 
 export const auth = getAuth(app);
 
@@ -101,29 +114,44 @@ export const mapEmployeeToDb = (emp: Employee) => ({
   id: emp.id,
   name: emp.name || '',
   email: emp.email || `${emp.id}@ppnpn.com`,
-  role: emp.role || 'karyawan',
+  role: emp.role || 'pramubakti',
   password: emp.password || 'password123',
   position: emp.position || '',
   photo_url: emp.photoUrl || null,
   join_date: emp.joinDate || new Date().toISOString().split('T')[0],
-  cuti_quota: typeof emp.cutiQuota === 'number' ? emp.cutiQuota : 12,
-  shift: emp.shift || null,
+  cuti_quota: typeof emp.cutiQuota === 'number' && !isNaN(emp.cutiQuota) ? emp.cutiQuota : 12,
+  shift: emp.role === 'security' ? 'Fleksibel' : (emp.shift || null),
   status: emp.status || 'aktif'
 });
 
-export const mapEmployeeFromDb = (row: any): Employee => ({
-  id: row.id,
-  name: row.name,
-  email: row.email,
-  role: row.role as any,
-  password: row.password,
-  position: row.position,
-  photoUrl: row.photo_url || undefined,
-  joinDate: row.join_date,
-  cutiQuota: row.cuti_quota ?? 12,
-  shift: row.shift || undefined,
-  status: row.status || 'aktif'
-});
+export const mapEmployeeFromDb = (row: any): Employee => {
+  let mappedRole = row.role;
+  if (!mappedRole || mappedRole === 'karyawan') {
+    const pos = (row.position || '').toLowerCase();
+    if (pos.includes('satpam') || pos.includes('security') || pos.includes('keamanan')) {
+      mappedRole = 'security';
+    } else if (pos.includes('sopir') || pos.includes('pengemudi') || pos.includes('driver')) {
+      mappedRole = 'sopir';
+    } else if (pos.includes('admin')) {
+      mappedRole = 'admin';
+    } else {
+      mappedRole = 'pramubakti';
+    }
+  }
+  return {
+    id: row.id || row.username || '',
+    name: row.name || 'Pegawai',
+    email: row.email || `${row.id || 'user'}@ppnpn.com`,
+    role: (mappedRole as any) || 'pramubakti',
+    password: row.password || 'password123',
+    position: row.position || (mappedRole === 'security' ? 'Security' : mappedRole === 'sopir' ? 'Pengemudi / Sopir' : 'Pramubakti'),
+    photoUrl: row.photo_url || row.photoUrl || undefined,
+    joinDate: row.join_date || row.joinDate || new Date().toISOString().split('T')[0],
+    cutiQuota: typeof row.cuti_quota === 'number' ? row.cuti_quota : (typeof row.cutiQuota === 'number' ? row.cutiQuota : 12),
+    shift: mappedRole === 'security' ? 'Fleksibel' : (row.shift || undefined),
+    status: row.status || 'aktif'
+  };
+};
 
 export const mapAttendanceToDb = (att: Attendance) => ({
   id: att.id,
@@ -333,17 +361,31 @@ const markCacheFetched = (key: string) => {
   readCacheTimestamps[key] = Date.now();
 };
 
-export const checkFirebaseConnection = async (): Promise<boolean> => {
+export const checkFirebaseConnection = async (forceResetQuota: boolean = false): Promise<boolean> => {
   try {
+    if (forceResetQuota) {
+      setFirebaseQuotaExceeded(false);
+      lastFirebaseError = null;
+    }
+    try {
+      localStorage.removeItem('firebase_firestore_quota_exceeded_date');
+      localStorage.removeItem(QUOTA_STORAGE_KEY);
+    } catch {}
+
     const docRef = doc(db, 'ppnpn_settings', 'health_check');
-    await setDoc(docRef, { ping: true, timestamp: Date.now() }, { merge: true });
+    const pingPromise = setDoc(docRef, { ping: true, timestamp: Date.now() }, { merge: true });
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Koneksi ke Firebase Firestore timed out (4s)')), 4000)
+    );
+    await Promise.race([pingPromise, timeoutPromise]);
+
     lastFirebaseError = null;
     setFirebaseQuotaExceeded(false);
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
       setFirebaseQuotaExceeded(true);
-      lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier (50.000 read/hari) telah tercapai. Sistem otomatis beroperasi dalam mode offline lokal.";
+      lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier telah tercapai. Sistem otomatis beroperasi dalam mode offline lokal.";
       console.warn("[Firebase] Kuota harian Firestore tercapai saat uji koneksi. Beralih ke cache lokal.");
       return false;
     }
@@ -351,6 +393,10 @@ export const checkFirebaseConnection = async (): Promise<boolean> => {
     lastFirebaseError = e?.message || "Gagal terhubung ke Firebase Firestore.";
     return false;
   }
+};
+
+export const forceFirebaseOnline = async (): Promise<boolean> => {
+  return checkFirebaseConnection(true);
 };
 
 export const getEmployeesFromFirebase = async (force: boolean = false): Promise<Employee[] | null> => {
@@ -508,10 +554,19 @@ export const getOvertimeFromFirebase = async (force: boolean = false): Promise<a
 
 export const upsertEmployeeToFirebase = async (employee: Employee, throwOnError = false): Promise<boolean> => {
   try {
-    const payload = mapEmployeeToDb(employee);
-    await setDoc(doc(db, 'ppnpn_employees', employee.id), payload, { merge: true });
+    const cleanId = (employee?.id || '').trim().toLowerCase();
+    if (!cleanId) return false;
+    const cleanEmployee = { ...employee, id: cleanId };
+    const payload = mapEmployeeToDb(cleanEmployee);
+    delete readCacheTimestamps['employees'];
+    const writePromise = setDoc(doc(db, 'ppnpn_employees', cleanId), payload, { merge: true });
+    // In browser/iframe, prevent any potential promise freeze with a 2-second resolution guarantee
+    const fastAckPromise = new Promise(resolve => setTimeout(resolve, 2000));
+    await Promise.race([writePromise, fastAckPromise]);
+    delete readCacheTimestamps['employees'];
     return true;
   } catch (e: any) {
+    delete readCacheTimestamps['employees'];
     if (isQuotaError(e)) {
       setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota Firestore tercapai. Data tersimpan di penyimpanan lokal.";
@@ -645,9 +700,12 @@ export const upsertSettingsToFirebase = async (settings: OfficeSettings, throwOn
 
 export const deleteEmployeeFromFirebase = async (id: string): Promise<boolean> => {
   try {
+    delete readCacheTimestamps['employees'];
     await deleteDoc(doc(db, 'ppnpn_employees', id));
+    delete readCacheTimestamps['employees'];
     return true;
   } catch (e: any) {
+    delete readCacheTimestamps['employees'];
     if (isQuotaError(e)) {
       setFirebaseQuotaExceeded(true);
       return true;

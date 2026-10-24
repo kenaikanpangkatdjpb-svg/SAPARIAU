@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, Key, Mail, UserCheck, Trash2, Edit2, X, AlertTriangle, Shield, Car, Briefcase } from 'lucide-react';
+import { UserPlus, Search, Key, Mail, UserCheck, Trash2, Edit2, X, AlertTriangle, Shield, Car, Briefcase, Clock } from 'lucide-react';
 import { Employee, Role } from '../types';
 
 interface PegawaiViewProps {
@@ -10,9 +10,21 @@ interface PegawaiViewProps {
   onEditEmployee: (updatedEmp: Employee, oldId?: string) => void | Promise<void>;
 }
 
+const mapRole = (role?: string, position?: string): Role => {
+  if (role === 'admin' || role === 'security' || role === 'sopir' || role === 'pramubakti') {
+    return role;
+  }
+  const pos = (position || '').toLowerCase();
+  if (pos.includes('satpam') || pos.includes('security') || pos.includes('keamanan')) return 'security';
+  if (pos.includes('sopir') || pos.includes('pengemudi') || pos.includes('driver')) return 'sopir';
+  if (pos.includes('admin')) return 'admin';
+  return 'pramubakti';
+};
+
 export default function PegawaiView({ currentUser, employees, onAddEmployee, onDeleteEmployee, onEditEmployee }: PegawaiViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [justUpdatedId, setJustUpdatedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'semua' | 'aktif' | 'pindah' | 'tidak aktif'>('semua');
   const [roleFilter, setRoleFilter] = useState<'semua' | 'pramubakti' | 'sopir' | 'security' | 'admin'>('semua');
   const [isSaving, setIsSaving] = useState(false);
@@ -28,12 +40,19 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
     status: 'aktif' as 'aktif' | 'pindah' | 'tidak aktif'
   });
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [employeeToDelete, setEmployeeToDelete] = useState<{ id: string; name: string } | null>(null);
 
   const filteredEmployees = employees.filter(emp => {
-    const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.position.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!emp) return false;
+    const nameStr = (emp.name || '').toLowerCase();
+    const idStr = (emp.id || '').toLowerCase();
+    const posStr = (emp.position || '').toLowerCase();
+    const searchLower = (searchTerm || '').toLowerCase();
+
+    const matchesSearch = nameStr.includes(searchLower) ||
+      idStr.includes(searchLower) ||
+      posStr.includes(searchLower);
     
     const empStatus = emp.status || 'aktif';
     const matchesStatus = statusFilter === 'semua' || empStatus === statusFilter;
@@ -56,7 +75,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
       if (!defaultPos || currentPos === 'pramubakti' || currentPos === 'pengemudi / sopir' || currentPos === 'sopir' || currentPos === 'cleaning service') {
         defaultPos = 'Security / Petugas Keamanan';
       }
-      if (!newShift) newShift = 'pagi';
+      newShift = 'Fleksibel';
     } else if (newRole === 'sopir') {
       if (!defaultPos || currentPos === 'pramubakti' || currentPos.includes('security') || currentPos.includes('satpam') || currentPos === 'cleaning service') {
         defaultPos = 'Pengemudi / Sopir';
@@ -82,9 +101,14 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanUsername = formData.username.trim().toLowerCase();
-    if (!cleanUsername || !formData.name.trim() || !formData.password || !formData.position.trim()) {
-      alert("Semua field wajib diisi!");
+    setErrorMsg('');
+    const cleanUsername = (formData.username || '').trim().toLowerCase();
+    const cleanName = (formData.name || '').trim();
+    const cleanPosition = (formData.position || (formData.role === 'security' ? 'Security / Petugas Keamanan' : formData.role === 'sopir' ? 'Pengemudi / Sopir' : formData.role === 'admin' ? 'Administrator' : 'Pramubakti')).trim();
+    const cleanPassword = (formData.password || 'password123').trim();
+
+    if (!cleanUsername || !cleanName) {
+      setErrorMsg("Username dan Nama Lengkap wajib diisi!");
       return;
     }
 
@@ -92,8 +116,12 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
     try {
       if (editingEmployee) {
         // Edit Flow
-        if (cleanUsername !== editingEmployee.id.toLowerCase() && employees.some(emp => emp.id.toLowerCase() === cleanUsername)) {
-          alert("Username sudah terdaftar oleh pegawai lain!");
+        const oldId = (editingEmployee.id || '').trim().toLowerCase();
+        if (cleanUsername !== oldId && employees.some(emp => {
+          const empId = (emp.id || '').trim().toLowerCase();
+          return empId === cleanUsername && empId !== oldId;
+        })) {
+          setErrorMsg(`Username "${cleanUsername}" sudah digunakan oleh pegawai lain! Gunakan username lain.`);
           setIsSaving(false);
           return;
         }
@@ -102,17 +130,19 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
           ...editingEmployee,
           id: cleanUsername,
           email: `${cleanUsername}@ppnpn.com`,
-          name: formData.name.trim(),
-          position: formData.position.trim(),
-          password: formData.password,
+          name: cleanName,
+          position: cleanPosition,
+          password: cleanPassword,
           role: formData.role,
-          cutiQuota: formData.role === 'admin' ? 12 : Number(formData.cutiQuota),
-          shift: formData.role === 'security' ? (formData.shift ? (formData.shift as 'pagi' | 'malam') : 'pagi') : undefined,
+          cutiQuota: formData.role === 'admin' ? 12 : (Number(formData.cutiQuota) >= 0 ? Number(formData.cutiQuota) : 12),
+          shift: formData.role === 'security' ? 'Fleksibel' : undefined,
           status: formData.status
         };
 
         await onEditEmployee(updatedEmp, editingEmployee.id);
-        setSuccessMsg(`Perubahan data pegawai "${formData.name.trim()}" berhasil disimpan!`);
+        setJustUpdatedId(cleanUsername);
+        setTimeout(() => setJustUpdatedId(null), 4000);
+        setSuccessMsg(`Perubahan data pegawai "${cleanName}" berhasil disimpan!`);
         setEditingEmployee(null);
         
         // Reset form
@@ -126,29 +156,36 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
           shift: '',
           status: 'aktif'
         });
+
+        // Scroll smoothly to the updated row in the employee list
+        setTimeout(() => {
+          document.getElementById(`emp-row-${cleanUsername}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
       } else {
         // Register Flow
-        if (employees.some(emp => emp.id.toLowerCase() === cleanUsername)) {
-          alert("Username sudah terdaftar!");
+        if (employees.some(emp => (emp.id || '').trim().toLowerCase() === cleanUsername)) {
+          setErrorMsg(`Username "${cleanUsername}" sudah terdaftar! Gunakan username lain.`);
           setIsSaving(false);
           return;
         }
 
         const newEmp: Employee = {
           id: cleanUsername,
-          name: formData.name.trim(),
+          name: cleanName,
           email: `${cleanUsername}@ppnpn.com`,
-          position: formData.position.trim(),
-          password: formData.password,
+          position: cleanPosition,
+          password: cleanPassword,
           role: formData.role,
           joinDate: new Date().toISOString().split('T')[0],
-          cutiQuota: formData.role === 'admin' ? 12 : Number(formData.cutiQuota),
-          shift: formData.role === 'security' ? (formData.shift ? (formData.shift as 'pagi' | 'malam') : 'pagi') : undefined,
+          cutiQuota: formData.role === 'admin' ? 12 : (Number(formData.cutiQuota) >= 0 ? Number(formData.cutiQuota) : 12),
+          shift: formData.role === 'security' ? 'Fleksibel' : undefined,
           status: formData.status
         };
 
         await onAddEmployee(newEmp);
-        setSuccessMsg(`Pegawai ${formData.name.trim()} berhasil ditambahkan!`);
+        setJustUpdatedId(cleanUsername);
+        setTimeout(() => setJustUpdatedId(null), 4000);
+        setSuccessMsg(`Pegawai baru "${cleanName}" berhasil ditambahkan!`);
         
         // Reset form
         setFormData({
@@ -161,18 +198,23 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
           shift: '',
           status: 'aktif'
         });
+
+        setTimeout(() => {
+          document.getElementById(`emp-row-${cleanUsername}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 150);
       }
     } catch (err: any) {
       console.error("Gagal memproses data pegawai:", err);
-      alert(`Terjadi kendala saat menyimpan data: ${err?.message || err}`);
+      setErrorMsg(`Terjadi kendala saat menyimpan data: ${err?.message || err}`);
     } finally {
       setIsSaving(false);
-      setTimeout(() => setSuccessMsg(''), 4000);
+      setTimeout(() => setSuccessMsg(''), 5000);
     }
   };
 
   const handleCancelEdit = () => {
     setEditingEmployee(null);
+    setErrorMsg('');
     setFormData({
       username: '',
       name: '',
@@ -187,7 +229,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
 
   const handleDelete = (id: string, name: string) => {
     if (id === currentUser.id) {
-      alert("Anda tidak bisa menghapus akun Anda sendiri!");
+      setErrorMsg("Anda tidak bisa menghapus akun Anda sendiri!");
       return;
     }
     setEmployeeToDelete({ id, name });
@@ -301,7 +343,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
             { id: 'semua', label: 'Semua Peran' },
             { id: 'pramubakti', label: 'Pramubakti' },
             { id: 'sopir', label: 'Sopir / Pengemudi' },
-            { id: 'security', label: 'Security (Shift)' },
+            { id: 'security', label: 'Security (Fleksibel)' },
             { id: 'admin', label: 'Admin' }
           ].map((item) => (
             <button
@@ -337,14 +379,32 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
                 </div>
               ) : (
                 filteredEmployees.map((emp) => (
-                  <div key={emp.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
+                  <div
+                    key={emp.id}
+                    id={`emp-row-${emp.id}`}
+                    className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 ${
+                      justUpdatedId === emp.id
+                        ? 'bg-emerald-50/90 border-2 border-emerald-500 rounded-xl shadow-md ring-2 ring-emerald-200'
+                        : 'hover:bg-slate-50/50'
+                    }`}
+                  >
                     <div className="flex items-center gap-3.5">
-                      <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-700 text-sm shrink-0">
+                      <div className={`w-12 h-12 rounded-full border flex items-center justify-center font-bold text-sm shrink-0 ${
+                        justUpdatedId === emp.id
+                          ? 'bg-emerald-500 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-100 border-slate-200 text-slate-700'
+                      }`}>
                         {emp.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h5 className="font-bold text-slate-800 text-sm">{emp.name}</h5>
+
+                          {justUpdatedId === emp.id && (
+                            <span className="px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider rounded-full bg-emerald-600 text-white shadow-sm animate-pulse">
+                              Baru Diperbarui ✓
+                            </span>
+                          )}
 
                           {/* Distinctive Role Badges */}
                           {emp.role === 'admin' ? (
@@ -371,7 +431,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
                           {/* Special Security Shift badge */}
                           {emp.role === 'security' && (
                             <span className="px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider rounded-full border bg-amber-100/70 text-amber-800 border-amber-300 font-mono">
-                              {emp.shift === 'malam' ? 'Shift Malam (19:00 - 07:00)' : 'Shift Pagi (07:00 - 15:00)'}
+                              Fleksibel 24 Jam (Tanpa Batasan Shift)
                             </span>
                           )}
 
@@ -408,16 +468,17 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
                       {/* Edit Button */}
                       <button
                         onClick={() => {
+                          const normalizedRole = mapRole(emp.role, emp.position);
                           setEditingEmployee(emp);
                           setFormData({
-                            username: emp.id,
-                            name: emp.name,
-                            position: emp.position,
-                            password: emp.password,
-                            role: emp.role,
-                            cutiQuota: emp.cutiQuota,
-                            shift: emp.shift || '',
-                            status: emp.status || 'aktif'
+                            username: emp.id || '',
+                            name: emp.name || '',
+                            position: emp.position || '',
+                            password: emp.password || 'password123',
+                            role: normalizedRole,
+                            cutiQuota: typeof emp.cutiQuota === 'number' ? emp.cutiQuota : 12,
+                            shift: normalizedRole === 'security' ? 'Fleksibel' : '',
+                            status: (emp.status as any) || 'aktif'
                           });
                           document.getElementById('form-pegawai-container')?.scrollIntoView({ behavior: 'smooth' });
                         }}
@@ -476,9 +537,27 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
             )}
           </div>
 
+          {errorMsg && (
+            <div className="p-3 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+              <button type="button" onClick={() => setErrorMsg('')} className="text-rose-400 hover:text-rose-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {successMsg && (
-            <div className="p-3 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg">
-              {successMsg}
+            <div className="p-3 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                <span>{successMsg}</span>
+              </div>
+              <button type="button" onClick={() => setSuccessMsg('')} className="text-emerald-400 hover:text-emerald-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           )}
 
@@ -566,26 +645,24 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
               )}
             </div>
 
-            {/* Khusus Security: Jam Kerja Shift Mandiri */}
+            {/* Khusus Security: Jam Kerja Fleksibel 24 Jam (Tanpa Batasan Shift) */}
             {formData.role === 'security' ? (
-              <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl space-y-2">
+              <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl space-y-2">
                 <div className="flex items-center gap-1.5 text-amber-900 font-bold text-[11px]">
-                  <Shield className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Khusus Security: Jam Kerja Sistem Shift Mandiri</span>
+                  <Shield className="w-4 h-4 text-amber-600" />
+                  <span>Khusus Security: Jam Kerja Fleksibel 24 Jam</span>
                 </div>
-                <p className="text-[10px] text-amber-800 leading-relaxed font-medium">
-                  Petugas Keamanan memiliki sistem jam kerja terpisah dengan shift bergiliran.
+                <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                  Petugas Keamanan (Security) bertugas dengan sistem kerja fleksibel 24 jam dan <strong>tidak dibatasi shift kaku</strong>.
                 </p>
-                <div className="space-y-1 pt-0.5">
-                  <label className="block text-[10px] font-bold text-amber-900 uppercase tracking-wider">Pilih Shift Penugasan</label>
-                  <select
-                    value={formData.shift || 'pagi'}
-                    onChange={(e) => setFormData({...formData, shift: e.target.value as 'pagi' | 'malam'})}
-                    className="w-full text-xs px-3.5 py-2.5 bg-white border border-amber-300 rounded-lg text-slate-800 font-bold focus:outline-none focus:border-amber-500 shadow-2xs"
-                  >
-                    <option value="pagi">Shift Pagi (Pukul 07:00 - 15:00 WIB)</option>
-                    <option value="malam">Shift Malam (Pukul 19:00 - 07:00 WIB)</option>
-                  </select>
+                <div className="p-2.5 bg-white/90 rounded-lg border border-amber-200 text-[10px] text-amber-950 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Fleksibilitas Absensi Penuh:</span>
+                  </div>
+                  <p className="text-slate-600 leading-relaxed">
+                    Petugas security dapat melakukan absensi masuk dan pulang kapan saja sesuai penugasan piket atau pengamanan di lapangan tanpa dikenakan batasan shift.
+                  </p>
                 </div>
               </div>
             ) : formData.role !== 'admin' ? (

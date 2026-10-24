@@ -10,7 +10,7 @@ export interface Employee {
   photoUrl?: string;
   joinDate: string;
   cutiQuota: number;
-  shift?: 'pagi' | 'malam'; // Security Shift Pagi atau Malam
+  shift?: 'pagi' | 'malam' | 'Fleksibel' | string; // Security Fleksibel 24 Jam
   status?: 'aktif' | 'pindah' | 'tidak aktif';
 }
 
@@ -30,7 +30,7 @@ export interface Attendance {
   checkInStatus: 'Tepat Waktu' | 'Terlambat' | 'Alpa' | 'Izin' | 'Cuti';
   checkOutStatus: 'Pulang Cepat' | 'Tepat Waktu' | 'Lembur' | null;
   logbookNotes?: string;
-  shift?: 'pagi' | 'malam';
+  shift?: 'pagi' | 'malam' | 'Fleksibel' | string;
 }
 
 export interface LeaveRequest {

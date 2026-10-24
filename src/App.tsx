@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getStoredData, saveEmployees, saveAttendance, saveLeaves, saveLogbooks, saveSettings, safeSetLocalStorageItem, isNonPpnpn, NON_PPNPN_IDS } from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
 import { 
   checkSupabaseConnection,
+  forceSupabaseOnline,
   getEmployeesFromSupabase,
   getAttendanceFromSupabase,
   getLeavesFromSupabase,
@@ -24,6 +25,7 @@ import {
   resetAllEmployeeQuotasInSupabase,
   purgeNonPpnpnFromSupabase,
   isSupabaseQuotaExceeded,
+  getLastSupabaseError,
   SQL_CREATION_SCRIPT
 } from './utils/supabase';
 // Components
@@ -51,7 +53,7 @@ import BackupRestoreView from './components/BackupRestoreView';
 import ResetDataView from './components/ResetDataView';
 
 // Extra Evaluation Views to match the requested image perfectly
-import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle, Users, PlusSquare, X, ExternalLink } from 'lucide-react';
+import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle, Users, PlusSquare, X, ExternalLink, CheckCircle } from 'lucide-react';
 
 const MONTHS_LIST = [
   { value: '01', label: 'Januari' },
@@ -97,193 +99,227 @@ export default function App() {
   const [quotaSuccessMap, setQuotaSuccessMap] = useState<{ [empId: string]: boolean }>({});
 
   const [supabaseConnected, setSupabaseConnected] = useState(false);
-  const [isSyncingSupabase, setIsSyncingSupabase] = useState(false);
+  const [isSyncingSupabase, setIsSyncingSupabase] = useState(true);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(isSupabaseQuotaExceeded());
   const [dismissQuotaBanner, setDismissQuotaBanner] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info'; title?: string } | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info', title?: string) => {
+    setToast({ message, type, title });
+  }, []);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Initialize data on load and keep synchronized in realtime with Supabase Cloud
-  useEffect(() => {
-    const loadAllData = async () => {
-      // 1. Immediately load local storage to ensure instant offline-first rendering
-      const data = getStoredData();
-      setEmployees(data.employees);
-      setAttendance(data.attendance);
-      setLeaves(data.leaves);
-      setLogbooks(data.logbooks);
-      setSettings(data.settings);
+  const loadAllData = useCallback(async () => {
+    // 1. Immediately load local storage to ensure instant offline-first rendering
+    const data = getStoredData();
+    setEmployees(data.employees);
+    setAttendance(data.attendance);
+    setLeaves(data.leaves);
+    setLogbooks(data.logbooks);
+    setSettings(data.settings);
 
-      // Clean up legacy global quota key
+    // Clean up legacy global quota key
+    try {
+      localStorage.removeItem('firebase_firestore_quota_exceeded_date');
+    } catch {}
+
+    // 2. Validate connection to Firebase and perform data synchronization
+    const isConnected = await checkSupabaseConnection();
+    setSupabaseConnected(isConnected);
+    setIsQuotaExceeded(isSupabaseQuotaExceeded());
+
+    if (isConnected) {
+      setIsSyncingSupabase(true);
       try {
-        localStorage.removeItem('firebase_firestore_quota_exceeded_date');
-      } catch {}
+        // Immediately purge non-PPNPN records in the background
+        purgeNonPpnpnFromSupabase().catch(() => {});
 
-      // 2. Validate connection to Firebase and perform data synchronization
-      const isConnected = await checkSupabaseConnection();
-      setSupabaseConnected(isConnected);
-      setIsQuotaExceeded(isSupabaseQuotaExceeded());
+        // Sync Employees
+        const rawDbEmps = await getEmployeesFromSupabase();
+        const dbEmps = (rawDbEmps || []).filter(e => !isNonPpnpn(e.id, e.name));
+        
+        // Delete any non-PPNPNs discovered in remote database
+        (rawDbEmps || []).forEach(e => {
+          if (isNonPpnpn(e.id, e.name)) {
+            deleteEmployeeFromSupabase(e.id).catch(() => {});
+          }
+        });
 
-      if (isConnected) {
-        setIsSyncingSupabase(true);
-        try {
-          // Immediately purge non-PPNPN records in the background
-          purgeNonPpnpnFromSupabase().catch(() => {});
-
-          // Sync Employees
-          const rawDbEmps = await getEmployeesFromSupabase();
-          const dbEmps = (rawDbEmps || []).filter(e => !isNonPpnpn(e.id, e.name));
-          
-          // Delete any non-PPNPNs discovered in remote database
-          (rawDbEmps || []).forEach(e => {
-            if (isNonPpnpn(e.id, e.name)) {
-              deleteEmployeeFromSupabase(e.id).catch(() => {});
-            }
-          });
-
-          if (dbEmps.length > 0) {
-            const empMap = new Map<string, Employee>();
-            data.employees.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => empMap.set(e.id.toLowerCase(), e));
-            dbEmps.forEach(e => empMap.set(e.id.toLowerCase(), e));
-            const mergedEmps = Array.from(empMap.values()).filter(e => !isNonPpnpn(e.id, e.name));
-            setEmployees(mergedEmps);
-            safeSetLocalStorageItem('ppnpn_employees', mergedEmps);
-            if (!isSupabaseQuotaExceeded()) {
-              for (const emp of mergedEmps) {
-                if (!dbEmps.some(d => d.id.toLowerCase() === emp.id.toLowerCase())) {
-                  await upsertEmployeeToSupabase(emp);
-                }
-              }
-            }
-          } else if (data.employees.length > 0) {
-            const validEmps = data.employees.filter(e => !isNonPpnpn(e.id, e.name));
-            if (!isSupabaseQuotaExceeded()) {
-              for (const emp of validEmps) {
+        if (dbEmps.length > 0) {
+          const empMap = new Map<string, Employee>();
+          data.employees.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => empMap.set(e.id.toLowerCase(), e));
+          dbEmps.forEach(e => empMap.set(e.id.toLowerCase(), e));
+          const mergedEmps = Array.from(empMap.values()).filter(e => !isNonPpnpn(e.id, e.name));
+          setEmployees(mergedEmps);
+          safeSetLocalStorageItem('ppnpn_employees', mergedEmps);
+          if (!isSupabaseQuotaExceeded()) {
+            for (const emp of mergedEmps) {
+              if (!dbEmps.some(d => d.id.toLowerCase() === emp.id.toLowerCase())) {
                 await upsertEmployeeToSupabase(emp);
               }
             }
           }
-
-          // Sync Regular Attendance
-          const rawDbAtt = await getAttendanceFromSupabase();
-          const dbAtt = (rawDbAtt || []).filter(att => !isNonPpnpn(att.employeeId, att.employeeName));
-          if (dbAtt) {
-            const attMap = new Map<string, Attendance>();
-            const getAttKey = (att: Attendance) => {
-              const empKey = (att.employeeId || att.employeeName || 'unknown').toLowerCase();
-              return `${empKey}_${att.date}`;
-            };
-
-            data.attendance.filter(a => !isNonPpnpn(a.employeeId, a.employeeName)).forEach(att => attMap.set(getAttKey(att), { ...att }));
-
-            dbAtt.forEach(att => {
-              const key = getAttKey(att);
-              const existing = attMap.get(key);
-              if (!existing) {
-                attMap.set(key, { ...att });
-              } else {
-                attMap.set(key, {
-                  ...existing,
-                  ...att,
-                  checkIn: att.checkIn || existing.checkIn,
-                  checkInPhoto: att.checkInPhoto || existing.checkInPhoto,
-                  checkInLocation: att.checkInLocation || existing.checkInLocation,
-                  checkInAddress: att.checkInAddress || existing.checkInAddress,
-                  checkInStatus: att.checkInStatus || existing.checkInStatus,
-                  checkOut: att.checkOut || existing.checkOut,
-                  checkOutPhoto: att.checkOutPhoto || existing.checkOutPhoto,
-                  checkOutLocation: att.checkOutLocation || existing.checkOutLocation,
-                  checkOutAddress: att.checkOutAddress || existing.checkOutAddress,
-                  checkOutStatus: att.checkOutStatus || existing.checkOutStatus,
-                  logbookNotes: att.logbookNotes || existing.logbookNotes,
-                  shift: att.shift || existing.shift
-                });
-              }
-            });
-
-            const mergedAttendance = Array.from(attMap.values()).filter(a => !isNonPpnpn(a.employeeId, a.employeeName));
-            setAttendance(mergedAttendance);
-            safeSetLocalStorageItem('ppnpn_attendance', mergedAttendance);
-
-            if (!isSupabaseQuotaExceeded()) {
-              for (const att of mergedAttendance) {
-                if (!dbAtt.some(d => (d.employeeId?.toLowerCase() === att.employeeId?.toLowerCase() || d.id === att.id) && d.date === att.date)) {
-                  await upsertAttendanceToSupabase(att);
-                }
-              }
+        } else if (data.employees.length > 0) {
+          const validEmps = data.employees.filter(e => !isNonPpnpn(e.id, e.name));
+          if (!isSupabaseQuotaExceeded()) {
+            for (const emp of validEmps) {
+              await upsertEmployeeToSupabase(emp);
             }
           }
-
-          // Sync Leaves
-          const rawDbLeaves = await getLeavesFromSupabase();
-          const dbLeaves = (rawDbLeaves || []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
-          if (dbLeaves && dbLeaves.length > 0) {
-            setLeaves(dbLeaves);
-            const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
-            safeSetLocalStorageItem('ppnpn_leaves', filteredLeaves);
-          } else if (rawDbLeaves && rawDbLeaves.length === 0 && data.leaves.length > 0) {
-            const validLeaves = data.leaves.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
-            if (!isSupabaseQuotaExceeded()) {
-              for (const leave of validLeaves) {
-                await upsertLeaveToSupabase(leave);
-              }
-            }
-          }
-
-          // Sync Logbooks
-          const rawDbLogs = await getLogbooksFromSupabase();
-          const dbLogs = (rawDbLogs || []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
-          if (dbLogs && dbLogs.length > 0) {
-            setLogbooks(dbLogs);
-            safeSetLocalStorageItem('ppnpn_logbooks', dbLogs);
-          } else if (rawDbLogs && rawDbLogs.length === 0 && data.logbooks.length > 0) {
-            const validLogs = data.logbooks.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
-            if (!isSupabaseQuotaExceeded()) {
-              for (const log of validLogs) {
-                await upsertLogbookToSupabase(log);
-              }
-            }
-          }
-
-          // Sync Office Settings
-          const dbSettings = await getSettingsFromSupabase();
-          if (dbSettings) {
-            setSettings(dbSettings);
-            safeSetLocalStorageItem('ppnpn_settings', dbSettings);
-          } else if (!isSupabaseQuotaExceeded()) {
-            await upsertSettingsToSupabase(data.settings);
-          }
-
-          // Sync Overtime Attendance Records
-          const dbOvertime = await getOvertimeFromSupabase();
-          if (dbOvertime && dbOvertime.length > 0) {
-            safeSetLocalStorageItem('overtime_attendance_records', dbOvertime);
-          } else {
-            const localOvertime = localStorage.getItem('overtime_attendance_records');
-            if (localOvertime) {
-              try {
-                const parsed = JSON.parse(localOvertime);
-                if (!isSupabaseQuotaExceeded()) {
-                  for (const rec of parsed) {
-                    await upsertOvertimeToSupabase(rec);
-                  }
-                }
-              } catch (e) {
-                console.warn("Notice: local overtime records parsing:", e);
-              }
-            }
-          }
-        } catch (err) {
-          console.warn("Notice during startup synchronization:", err);
-        } finally {
-          setIsSyncingSupabase(false);
-          if (isSupabaseQuotaExceeded()) {
-            setIsQuotaExceeded(true);
-            setSupabaseConnected(false);
-          }
-          window.dispatchEvent(new Event('storage'));
         }
-      }
-    };
 
+        // Sync Regular Attendance
+        const rawDbAtt = await getAttendanceFromSupabase();
+        const dbAtt = (rawDbAtt || []).filter(att => !isNonPpnpn(att.employeeId, att.employeeName));
+        if (dbAtt) {
+          const attMap = new Map<string, Attendance>();
+          const getAttKey = (att: Attendance) => {
+            const empKey = (att.employeeId || att.employeeName || 'unknown').toLowerCase();
+            return `${empKey}_${att.date}`;
+          };
+
+          data.attendance.filter(a => !isNonPpnpn(a.employeeId, a.employeeName)).forEach(att => attMap.set(getAttKey(att), { ...att }));
+
+          dbAtt.forEach(att => {
+            const key = getAttKey(att);
+            const existing = attMap.get(key);
+            if (!existing) {
+              attMap.set(key, { ...att });
+            } else {
+              attMap.set(key, {
+                ...existing,
+                ...att,
+                checkIn: att.checkIn || existing.checkIn,
+                checkInPhoto: att.checkInPhoto || existing.checkInPhoto,
+                checkInLocation: att.checkInLocation || existing.checkInLocation,
+                checkInAddress: att.checkInAddress || existing.checkInAddress,
+                checkInStatus: att.checkInStatus || existing.checkInStatus,
+                checkOut: att.checkOut || existing.checkOut,
+                checkOutPhoto: att.checkOutPhoto || existing.checkOutPhoto,
+                checkOutLocation: att.checkOutLocation || existing.checkOutLocation,
+                checkOutAddress: att.checkOutAddress || existing.checkOutAddress,
+                checkOutStatus: att.checkOutStatus || existing.checkOutStatus,
+                logbookNotes: att.logbookNotes || existing.logbookNotes,
+                shift: att.shift || existing.shift
+              });
+            }
+          });
+
+          const mergedAttendance = Array.from(attMap.values()).filter(a => !isNonPpnpn(a.employeeId, a.employeeName));
+          setAttendance(mergedAttendance);
+          safeSetLocalStorageItem('ppnpn_attendance', mergedAttendance);
+
+          if (!isSupabaseQuotaExceeded()) {
+            for (const att of mergedAttendance) {
+              if (!dbAtt.some(d => (d.employeeId?.toLowerCase() === att.employeeId?.toLowerCase() || d.id === att.id) && d.date === att.date)) {
+                await upsertAttendanceToSupabase(att);
+              }
+            }
+          }
+        }
+
+        // Sync Leaves
+        const rawDbLeaves = await getLeavesFromSupabase();
+        const dbLeaves = (rawDbLeaves || []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
+        if (dbLeaves && dbLeaves.length > 0) {
+          setLeaves(dbLeaves);
+          const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
+          safeSetLocalStorageItem('ppnpn_leaves', filteredLeaves);
+        } else if (rawDbLeaves && rawDbLeaves.length === 0 && data.leaves.length > 0) {
+          const validLeaves = data.leaves.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
+          if (!isSupabaseQuotaExceeded()) {
+            for (const leave of validLeaves) {
+              await upsertLeaveToSupabase(leave);
+            }
+          }
+        }
+
+        // Sync Logbooks
+        const rawDbLogs = await getLogbooksFromSupabase();
+        const dbLogs = (rawDbLogs || []).filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
+        if (dbLogs && dbLogs.length > 0) {
+          setLogbooks(dbLogs);
+          safeSetLocalStorageItem('ppnpn_logbooks', dbLogs);
+        } else if (rawDbLogs && rawDbLogs.length === 0 && data.logbooks.length > 0) {
+          const validLogs = data.logbooks.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
+          if (!isSupabaseQuotaExceeded()) {
+            for (const log of validLogs) {
+              await upsertLogbookToSupabase(log);
+            }
+          }
+        }
+
+        // Sync Office Settings
+        const dbSettings = await getSettingsFromSupabase();
+        if (dbSettings) {
+          setSettings(dbSettings);
+          safeSetLocalStorageItem('ppnpn_settings', dbSettings);
+        } else if (!isSupabaseQuotaExceeded()) {
+          await upsertSettingsToSupabase(data.settings);
+        }
+
+        // Sync Overtime Attendance Records
+        const dbOvertime = await getOvertimeFromSupabase();
+        if (dbOvertime && dbOvertime.length > 0) {
+          safeSetLocalStorageItem('overtime_attendance_records', dbOvertime);
+        } else {
+          const localOvertime = localStorage.getItem('overtime_attendance_records');
+          if (localOvertime) {
+            try {
+              const parsed = JSON.parse(localOvertime);
+              if (!isSupabaseQuotaExceeded()) {
+                for (const rec of parsed) {
+                  await upsertOvertimeToSupabase(rec);
+                }
+              }
+            } catch (e) {
+              console.warn("Notice: local overtime records parsing:", e);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Notice during startup synchronization:", err);
+      } finally {
+        setIsSyncingSupabase(false);
+        if (isSupabaseQuotaExceeded()) {
+          setIsQuotaExceeded(true);
+          setSupabaseConnected(false);
+        }
+        window.dispatchEvent(new Event('storage'));
+      }
+    }
+  }, []);
+
+  const handleManualReconnect = useCallback(async () => {
+    setIsSyncingSupabase(true);
+    showToast("Sedang menghubungkan ke Firebase Firestore...", "info", "Koneksi Database");
+    try {
+      const isConnected = await forceSupabaseOnline();
+      setSupabaseConnected(isConnected);
+      setIsQuotaExceeded(false);
+
+      if (isConnected) {
+        showToast("Berhasil terhubung ke database cloud Firebase Firestore! Status kini ONLINE (Sync Active).", "success", "Database Online");
+        loadAllData().catch(err => console.warn("Background loadAllData notice:", err));
+      } else {
+        const err = getLastSupabaseError();
+        showToast(`Status Database: Offline. ${err || 'Gagal tersambung ke Firebase Firestore'}. Sistem tetap berjalan dengan data lokal.`, "error", "Database Offline");
+      }
+    } catch (e: any) {
+      showToast(`Gagal menghubungkan ke database: ${e?.message || e}`, "error", "Koneksi Gagal");
+    } finally {
+      setIsSyncingSupabase(false);
+    }
+  }, [loadAllData, showToast]);
+
+  useEffect(() => {
     loadAllData();
 
     // Attach real-time cloud listeners for live instant synchronization
@@ -308,74 +344,54 @@ export default function App() {
     const unsubEmp = subscribeToEmployeesFromSupabase((dbEmps) => {
       if (dbEmps && dbEmps.length > 0) {
         setEmployees(prev => {
-          const map = new Map<string, Employee>();
-          prev.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => map.set(e.id.toLowerCase(), e));
-          dbEmps.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => map.set(e.id.toLowerCase(), e));
-          const merged = Array.from(map.values()).filter(e => !isNonPpnpn(e.id, e.name));
+          const remoteMap = new Map<string, Employee>();
+          dbEmps.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => remoteMap.set((e.id || '').toLowerCase(), e));
+          
+          const updatedPrev = prev
+            .filter(e => !isNonPpnpn(e.id, e.name))
+            .map(e => {
+              const remote = remoteMap.get((e.id || '').toLowerCase());
+              if (remote) {
+                remoteMap.delete((e.id || '').toLowerCase());
+                return { ...remote, ...e };
+              }
+              return e;
+            });
+
+          const newEmps = Array.from(remoteMap.values());
+          const merged = [...updatedPrev, ...newEmps];
           safeSetLocalStorageItem('ppnpn_employees', merged);
           return merged;
         });
       }
     });
 
-    // Setup gentle periodic polling sync (every 15 minutes) only if not quota exceeded and tab is visible
+    // Gentle connection health check every 25 seconds
+    // (real-time onSnapshot listeners already handle live updates without polling)
     const interval = setInterval(async () => {
-      if (isSupabaseQuotaExceeded()) {
-        setIsQuotaExceeded(true);
-        setSupabaseConnected(false);
-        return;
-      }
       if (typeof document !== 'undefined' && document.hidden) {
         return;
       }
-
-      const isConnected = await checkSupabaseConnection();
-      setSupabaseConnected(isConnected);
-
-      if (isSupabaseQuotaExceeded()) {
-        setIsQuotaExceeded(true);
-        setSupabaseConnected(false);
-        return;
+      try {
+        const isConnected = await checkSupabaseConnection();
+        setSupabaseConnected(isConnected);
+        setIsQuotaExceeded(isSupabaseQuotaExceeded());
+      } catch (err) {
+        console.warn("Background connection check notice:", err);
       }
+    }, 25000);
 
-      if (isConnected) {
-        try {
-          const dbEmps = await getEmployeesFromSupabase();
-          if (dbEmps && dbEmps.length > 0) {
-            setEmployees(dbEmps);
-            safeSetLocalStorageItem('ppnpn_employees', dbEmps);
-          }
-
-          const dbAtt = await getAttendanceFromSupabase();
-          if (dbAtt !== null) {
-            setAttendance(dbAtt);
-            safeSetLocalStorageItem('ppnpn_attendance', dbAtt);
-          }
-
-          const dbLeaves = await getLeavesFromSupabase();
-          if (dbLeaves !== null) {
-            setLeaves(dbLeaves);
-            const filteredLeaves = dbLeaves.filter(l => l.type !== 'Lembur');
-            safeSetLocalStorageItem('ppnpn_leaves', filteredLeaves);
-          }
-
-          const dbLogs = await getLogbooksFromSupabase();
-          if (dbLogs !== null) {
-            setLogbooks(dbLogs);
-            safeSetLocalStorageItem('ppnpn_logbooks', dbLogs);
-          }
-
-          const dbOvertime = await getOvertimeFromSupabase();
-          if (dbOvertime && dbOvertime.length > 0) {
-            safeSetLocalStorageItem('overtime_attendance_records', dbOvertime);
-          }
-
-          window.dispatchEvent(new Event('storage'));
-        } catch (err) {
-          console.warn("Notice in background sync:", err);
+    const handleNetworkChange = () => {
+      checkSupabaseConnection().then(connected => {
+        setSupabaseConnected(connected);
+        setIsQuotaExceeded(isSupabaseQuotaExceeded());
+        if (connected) {
+          loadAllData().catch(() => {});
         }
-      }
-    }, 900000); // 15 menit (hemat 87% kuota read harian)
+      });
+    };
+    window.addEventListener('focus', handleNetworkChange);
+    window.addEventListener('online', handleNetworkChange);
 
     return () => {
       try {
@@ -383,8 +399,10 @@ export default function App() {
         if (typeof unsubEmp === 'function') unsubEmp();
       } catch {}
       clearInterval(interval);
+      window.removeEventListener('focus', handleNetworkChange);
+      window.removeEventListener('online', handleNetworkChange);
     };
-  }, []);
+  }, [loadAllData]);
 
   // Synchronize currentUser with the latest employee record from employees list
   useEffect(() => {
@@ -428,7 +446,7 @@ export default function App() {
   const handleSeedSupabase = async () => {
     const isConnected = await checkSupabaseConnection();
     if (!isConnected) {
-      alert("Gagal terhubung ke Supabase! Pastikan Anda sudah membuat tabel database menggunakan SQL Script di SQL Editor Supabase.");
+      showToast("Gagal terhubung ke Firebase! Pastikan konfigurasi Firestore sudah tepat.", "error", "Koneksi Gagal");
       return;
     }
 
@@ -511,22 +529,13 @@ export default function App() {
       }
 
       if (errors.length === 0) {
-        alert(`Inisialisasi & Migrasi data berhasil dilakukan!\n\nSeluruh ${successCount} data berhasil dipindahkan ke Supabase Cloud.`);
+        showToast(`Inisialisasi & Migrasi data berhasil! Seluruh ${successCount} data berhasil dipindahkan ke Firebase Firestore.`, "success", "Migrasi Sukses");
       } else {
-        const errorSummary = errors.slice(0, 5).join('\n');
-        const remainingCount = errors.length > 5 ? `\n...dan ${errors.length - 5} kesalahan lainnya` : '';
-        alert(
-          `Inisialisasi & Migrasi selesai sebagian.\n\n` +
-          `Berhasil memindahkan: ${successCount} dari ${totalCount} data.\n` +
-          `Gagal memindahkan: ${errors.length} data.\n\n` +
-          `Daftar kesalahan:\n${errorSummary}${remainingCount}\n\n` +
-          `Saran:\n1. Pastikan Anda sudah menjalankan seluruh SQL Schema Script di SQL Editor Supabase.\n` +
-          `2. Periksa apakah Row Level Security (RLS) di Supabase sudah dimatikan untuk semua tabel.`
-        );
+        showToast(`Inisialisasi & Migrasi selesai: ${successCount} berhasil, ${errors.length} gagal.`, "error", "Migrasi Selesai Sebagian");
       }
     } catch (err: any) {
       console.error(err);
-      alert(`Terjadi kesalahan sistem saat memigrasikan data ke Supabase: ${err.message || err}`);
+      showToast(`Terjadi kesalahan sistem saat memigrasikan data: ${err.message || err}`, "error", "Kesalahan Sistem");
     } finally {
       setIsSyncingSupabase(false);
     }
@@ -610,63 +619,109 @@ export default function App() {
 
   // Employee actions
   const handleAddEmployee = async (newEmp: Employee) => {
-    const updated = [...employees, newEmp];
-    setEmployees(updated);
-    saveEmployees(updated);
-    try {
-      await upsertEmployeeToSupabase(newEmp, true);
-    } catch (err) {
+    const cleanId = (newEmp.id || '').trim().toLowerCase();
+    const normalizedEmp: Employee = {
+      ...newEmp,
+      id: cleanId,
+      name: newEmp.name.trim(),
+      email: `${cleanId}@ppnpn.com`,
+      role: newEmp.role,
+      position: newEmp.position.trim(),
+      password: newEmp.password,
+      cutiQuota: typeof newEmp.cutiQuota === 'number' && !isNaN(newEmp.cutiQuota) ? newEmp.cutiQuota : 12,
+      shift: newEmp.role === 'security' ? 'Fleksibel' : undefined,
+      status: newEmp.status || 'aktif'
+    };
+
+    setEmployees(prev => {
+      const exists = prev.some(e => (e.id || '').trim().toLowerCase() === cleanId);
+      const updated = exists
+        ? prev.map(e => (e.id || '').trim().toLowerCase() === cleanId ? normalizedEmp : e)
+        : [...prev, normalizedEmp];
+      saveEmployees(updated);
+      safeSetLocalStorageItem('ppnpn_employees', updated);
+      return updated;
+    });
+
+    window.dispatchEvent(new Event('storage'));
+
+    // Persist to Firebase Firestore asynchronously without freezing UI
+    upsertEmployeeToSupabase(normalizedEmp, false).catch(err => {
       console.warn("Gagal menyimpan pegawai baru ke Firebase:", err);
-    }
+    });
   };
 
   const handleDeleteEmployee = async (id: string) => {
-    const updated = employees.filter(e => e.id.toLowerCase() !== id.toLowerCase());
-    setEmployees(updated);
-    saveEmployees(updated);
-    try {
-      await deleteEmployeeFromSupabase(id);
-    } catch (err) {
+    const cleanId = (id || '').trim().toLowerCase();
+    setEmployees(prev => {
+      const updated = prev.filter(e => (e.id || '').trim().toLowerCase() !== cleanId);
+      saveEmployees(updated);
+      safeSetLocalStorageItem('ppnpn_employees', updated);
+      return updated;
+    });
+
+    window.dispatchEvent(new Event('storage'));
+
+    deleteEmployeeFromSupabase(cleanId).catch(err => {
       console.warn("Gagal menghapus pegawai dari Firebase:", err);
-    }
+    });
   };
 
   const handleEditEmployee = async (updatedEmp: Employee, oldId?: string) => {
-    const targetId = (oldId || updatedEmp.id).trim();
-    const targetLower = targetId.toLowerCase();
+    const cleanOldId = (oldId || updatedEmp.id || '').trim().toLowerCase();
+    const cleanNewId = (updatedEmp.id || '').trim().toLowerCase();
 
-    // 1. Update state and local storage
-    const exists = employees.some(e => e.id.toLowerCase() === targetLower);
-    const updated = exists
-      ? employees.map(e => e.id.toLowerCase() === targetLower ? updatedEmp : e)
-      : [...employees, updatedEmp];
+    const normalizedEmp: Employee = {
+      ...updatedEmp,
+      id: cleanNewId,
+      name: updatedEmp.name.trim(),
+      email: `${cleanNewId}@ppnpn.com`,
+      position: updatedEmp.position.trim(),
+      password: updatedEmp.password,
+      role: updatedEmp.role,
+      cutiQuota: typeof updatedEmp.cutiQuota === 'number' && !isNaN(updatedEmp.cutiQuota) ? updatedEmp.cutiQuota : 12,
+      shift: updatedEmp.role === 'security' ? 'Fleksibel' : undefined,
+      status: updatedEmp.status || 'aktif'
+    };
 
-    setEmployees(updated);
-    saveEmployees(updated);
+    // 1. Update state and local storage immediately in-place
+    setEmployees(prev => {
+      const exists = prev.some(e => (e.id || '').trim().toLowerCase() === cleanOldId);
+      let updated: Employee[];
+      if (exists) {
+        updated = prev
+          .filter(e => {
+            const id = (e.id || '').trim().toLowerCase();
+            return cleanOldId === cleanNewId || id !== cleanNewId;
+          })
+          .map(e => (e.id || '').trim().toLowerCase() === cleanOldId ? normalizedEmp : e);
+      } else {
+        updated = [...prev.filter(e => (e.id || '').trim().toLowerCase() !== cleanNewId), normalizedEmp];
+      }
+      saveEmployees(updated);
+      safeSetLocalStorageItem('ppnpn_employees', updated);
+      return updated;
+    });
 
-    // 2. Persist to Firebase Firestore
-    try {
-      await upsertEmployeeToSupabase(updatedEmp, true);
-    } catch (err: any) {
-      console.error("Gagal memperbarui pegawai di Firebase Firestore:", err);
-    }
+    // 2. Persist to Firebase Firestore in background without blocking UI
+    upsertEmployeeToSupabase(normalizedEmp, false).catch(err => {
+      console.warn("Notice: background employee sync to Firestore:", err);
+    });
 
     // 3. If ID changed (username renamed)
-    if (oldId && oldId.toLowerCase() !== updatedEmp.id.toLowerCase()) {
-      try {
-        await deleteEmployeeFromSupabase(oldId);
-      } catch (err) {
-        console.warn("Gagal menghapus ID lama di Firebase:", err);
-      }
+    if (cleanOldId && cleanOldId !== cleanNewId) {
+      deleteEmployeeFromSupabase(cleanOldId).catch(err => {
+        console.warn("Notice: background delete old ID from Firebase:", err);
+      });
 
       // Update Attendance records with oldId
       const updatedAttendance = attendance.map(att => {
-        if (att.employeeId?.toLowerCase() === oldId.toLowerCase()) {
+        if (att.employeeId?.toLowerCase() === cleanOldId) {
           const newAtt = {
             ...att,
-            employeeId: updatedEmp.id,
-            employeeName: updatedEmp.name,
-            id: att.id.startsWith(`att_${oldId}_`) ? `att_${updatedEmp.id}_${att.date}` : att.id
+            employeeId: normalizedEmp.id,
+            employeeName: normalizedEmp.name,
+            id: att.id.startsWith(`att_${cleanOldId}_`) ? `att_${normalizedEmp.id}_${att.date}` : att.id
           };
           upsertAttendanceToSupabase(newAtt).catch(() => {});
           return newAtt;
@@ -678,11 +733,11 @@ export default function App() {
 
       // Update Leaves records with oldId
       const updatedLeaves = leaves.map(leave => {
-        if (leave.employeeId?.toLowerCase() === oldId.toLowerCase()) {
+        if (leave.employeeId?.toLowerCase() === cleanOldId) {
           const newLeave = {
             ...leave,
-            employeeId: updatedEmp.id,
-            employeeName: updatedEmp.name
+            employeeId: normalizedEmp.id,
+            employeeName: normalizedEmp.name
           };
           upsertLeaveToSupabase(newLeave).catch(() => {});
           return newLeave;
@@ -694,11 +749,11 @@ export default function App() {
 
       // Update Logbooks records with oldId
       const updatedLogbooks = logbooks.map(log => {
-        if (log.employeeId?.toLowerCase() === oldId.toLowerCase()) {
+        if (log.employeeId?.toLowerCase() === cleanOldId) {
           const newLog = {
             ...log,
-            employeeId: updatedEmp.id,
-            employeeName: updatedEmp.name
+            employeeId: normalizedEmp.id,
+            employeeName: normalizedEmp.name
           };
           upsertLogbookToSupabase(newLog).catch(() => {});
           return newLog;
@@ -709,8 +764,8 @@ export default function App() {
       saveLogbooks(updatedLogbooks);
 
       // Overtime requests key renaming in localStorage
-      const oldRequestsKey = `overtime_requests_${oldId}`;
-      const newRequestsKey = `overtime_requests_${updatedEmp.id}`;
+      const oldRequestsKey = `overtime_requests_${cleanOldId}`;
+      const newRequestsKey = `overtime_requests_${normalizedEmp.id}`;
       const oldRequestsData = localStorage.getItem(oldRequestsKey);
       if (oldRequestsData) {
         safeSetLocalStorageItem(newRequestsKey, oldRequestsData);
@@ -723,12 +778,12 @@ export default function App() {
         try {
           const records = JSON.parse(storedOvertime);
           const updatedRecords = records.map((rec: any) => {
-            if (rec.employeeId?.toLowerCase() === oldId.toLowerCase()) {
+            if (rec.employeeId?.toLowerCase() === cleanOldId) {
               return {
                 ...rec,
-                employeeId: updatedEmp.id,
-                employeeName: updatedEmp.name,
-                id: rec.id === `ov_att_${oldId}_${rec.date}` ? `ov_att_${updatedEmp.id}_${rec.date}` : rec.id
+                employeeId: normalizedEmp.id,
+                employeeName: normalizedEmp.name,
+                id: rec.id === `ov_att_${cleanOldId}_${rec.date}` ? `ov_att_${normalizedEmp.id}_${rec.date}` : rec.id
               };
             }
             return rec;
@@ -738,13 +793,14 @@ export default function App() {
           console.error("Error updating overtime records", e);
         }
       }
-
-      window.dispatchEvent(new Event('storage'));
     }
 
+    // Always dispatch storage event so views re-render smoothly
+    window.dispatchEvent(new Event('storage'));
+
     // 4. Update currentUser if logged in user was modified
-    if (currentUser && (currentUser.id.toLowerCase() === targetLower || currentUser.id.toLowerCase() === updatedEmp.id.toLowerCase())) {
-      setCurrentUser(updatedEmp);
+    if (currentUser && (currentUser.id.toLowerCase() === cleanOldId || currentUser.id.toLowerCase() === cleanNewId)) {
+      setCurrentUser(normalizedEmp);
     }
   };
 
@@ -1018,7 +1074,7 @@ export default function App() {
     }
 
     setAbsenModalType(null);
-    alert(`Berhasil melakukan Absen ${isMasuk ? 'Masuk' : 'Pulang'}!`);
+    showToast(`Berhasil melakukan Absen ${isMasuk ? 'Masuk' : 'Pulang'}!`, "success", "Absensi Berhasil");
   };
 
   // Save Settings
@@ -1400,11 +1456,11 @@ export default function App() {
                   <button
                     onClick={() => {
                       if (window.confirm("Apakah Anda yakin ingin mengatur ulang kuota cuti SEMUA pegawai menjadi 12 hari?")) {
-                        const updated = employees.map(emp => emp.role === 'karyawan' ? { ...emp, cutiQuota: 12 } : emp);
+                        const updated = employees.map(emp => emp.role !== 'admin' ? { ...emp, cutiQuota: 12 } : emp);
                         setEmployees(updated);
                         saveEmployees(updated);
                         updated.forEach(empItem => upsertEmployeeToSupabase(empItem));
-                        alert("Kuota cuti semua karyawan berhasil di-reset menjadi 12 Hari!");
+                        showToast("Kuota cuti semua karyawan berhasil di-reset menjadi 12 Hari!", "success", "Reset Kuota Selesai");
                       }
                     }}
                     className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider transition-colors rounded-lg flex items-center justify-center gap-2 cursor-pointer shadow-sm"
@@ -1447,7 +1503,7 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {employees
-                        .filter(emp => emp.role === 'karyawan' && (searchQuotaQuery ? emp.name.toLowerCase().includes(searchQuotaQuery.toLowerCase()) : true))
+                        .filter(emp => emp.role !== 'admin' && (searchQuotaQuery ? emp.name.toLowerCase().includes(searchQuotaQuery.toLowerCase()) : true))
                         .map(emp => (
                           <tr key={emp.id} className="hover:bg-slate-50/40 transition-colors">
                             <td className="p-3 font-bold text-slate-800">
@@ -1607,6 +1663,8 @@ export default function App() {
         onViewChange={handleViewChange}
         onLogout={handleLogout}
         supabaseConnected={supabaseConnected}
+        isSyncing={isSyncingSupabase}
+        onReconnect={handleManualReconnect}
         isOpen={sidebarOpen}
         onCloseMobile={() => setSidebarOpen(false)}
       />
@@ -1680,6 +1738,39 @@ export default function App() {
           onSubmit={handleAttendanceSubmit}
           todayAttendance={todayAttendance}
         />
+      )}
+
+      {/* 5. FLOATING SYSTEM NOTIFICATION TOAST */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-[9999] max-w-sm w-full bg-slate-900/95 backdrop-blur border border-slate-700 text-white rounded-xl shadow-2xl p-4 flex items-start gap-3 transition-all animate-in fade-in slide-in-from-top-2">
+          {toast.type === 'success' && (
+            <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <CheckCircle className="w-5 h-5" />
+            </div>
+          )}
+          {toast.type === 'error' && (
+            <div className="w-8 h-8 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+          )}
+          {toast.type === 'info' && (
+            <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+              <RefreshCw className="w-5 h-5 animate-spin" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            {toast.title && <h4 className="text-xs font-bold text-slate-100">{toast.title}</h4>}
+            <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">{toast.message}</p>
+          </div>
+          <button 
+            type="button"
+            onClick={() => setToast(null)}
+            className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+            title="Tutup pemberitahuan"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   );

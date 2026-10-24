@@ -35,6 +35,8 @@ interface SidebarProps {
   onViewChange: (view: string) => void;
   onLogout: () => void;
   supabaseConnected?: boolean;
+  isSyncing?: boolean;
+  onReconnect?: () => void;
   isOpen: boolean;
   onCloseMobile: () => void;
 }
@@ -45,6 +47,8 @@ export default function Sidebar({
   onViewChange, 
   onLogout, 
   supabaseConnected = false,
+  isSyncing = false,
+  onReconnect,
   isOpen,
   onCloseMobile
 }: SidebarProps) {
@@ -132,7 +136,13 @@ export default function Sidebar({
               {user.name}
             </h3>
             <p className="text-[10px] text-blue-400 truncate mt-0.5 font-bold uppercase tracking-wider">
-              {user.role === 'admin' ? 'Administrator' : 'PPNPN'}
+              {user.role === 'admin' 
+                ? 'Administrator' 
+                : user.role === 'security' 
+                  ? 'PPNPN Security (Shift)' 
+                  : user.role === 'sopir' 
+                    ? 'PPNPN Sopir' 
+                    : 'PPNPN Pramubakti'}
             </p>
           </div>
         </div>
@@ -205,15 +215,21 @@ export default function Sidebar({
         </div>
         <div 
           className="flex items-center justify-between border-t border-slate-800/60 pt-2 text-[9px] uppercase tracking-wider text-slate-500 font-bold font-mono"
-          title={isSupabaseQuotaExceeded() ? 'Batas Kuota Gratis Firestore Tercapai (50.000 reads/hari) - Berjalan Offline' : (supabaseConnected ? 'Firebase Firestore Terhubung' : (getLastSupabaseError() || 'Cloud Database Offline'))}
+          title={isSupabaseQuotaExceeded() ? 'Batas Kuota Gratis Firestore Tercapai (50.000 reads/hari) - Berjalan Offline' : (supabaseConnected ? 'Firebase Firestore Terhubung & Sinkron' : (getLastSupabaseError() || 'Klik untuk menghubungkan ke Firebase Firestore'))}
         >
           <span>Cloud Database</span>
-          <span className="flex items-center gap-1.5 cursor-help">
-            <span className={`w-1.5 h-1.5 rounded-full ${isSupabaseQuotaExceeded() ? 'bg-amber-400' : (supabaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500')}`} />
-            <span className={isSupabaseQuotaExceeded() ? 'text-amber-400 font-semibold' : ''}>
-              {isSupabaseQuotaExceeded() ? 'Quota Limit (Offline)' : (supabaseConnected ? 'Sync Active' : 'Offline')}
+          <button
+            type="button"
+            onClick={onReconnect}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+            title="Klik untuk tes & hubungkan ulang database"
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${isSupabaseQuotaExceeded() ? 'bg-amber-400' : (supabaseConnected ? 'bg-emerald-500 animate-pulse' : (isSyncing ? 'bg-sky-400 animate-ping' : 'bg-rose-500'))}`} />
+            <span className={isSupabaseQuotaExceeded() ? 'text-amber-400 font-semibold' : (supabaseConnected ? 'text-emerald-400 font-bold' : (isSyncing ? 'text-sky-400 font-bold' : 'text-rose-400 hover:underline font-bold'))}>
+              {isSupabaseQuotaExceeded() ? 'Quota Limit (Offline)' : (isSyncing ? 'Menghubungkan...' : (supabaseConnected ? 'Sync Active' : 'Offline (Klik Hubungkan)'))}
             </span>
-          </span>
+          </button>
         </div>
       </div>
     </aside>

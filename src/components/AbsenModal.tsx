@@ -195,30 +195,18 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
       
       const checkInStatus = (): 'Tepat Waktu' | 'Terlambat' => {
         if (type === 'pulang') return 'Tepat Waktu';
-        const now = new Date();
         
-        let endHour = 8;
-        let endMinute = 15;
-        
+        // Khusus Security: Jam kerja fleksibel 24 jam tanpa batasan shift kaku
         if (isSecurity) {
-          if (selectedShift === 'pagi') {
-            const shiftEndStr = settings?.securityShiftPagiEnd || "08:00";
-            const [h, m] = shiftEndStr.split(':').map(Number);
-            endHour = h;
-            endMinute = m;
-          } else {
-            const shiftEndStr = settings?.securityShiftMalamEnd || "19:00";
-            const [h, m] = shiftEndStr.split(':').map(Number);
-            endHour = h;
-            endMinute = m;
-          }
-        } else {
-          // PPNPN Pramubakti and Sopir follow standard office hours
-          const checkInEndStr = settings?.checkInEnd || "08:15";
-          const [h, m] = checkInEndStr.split(':').map(Number);
-          endHour = h;
-          endMinute = m;
+          return 'Tepat Waktu';
         }
+
+        const now = new Date();
+        // PPNPN Pramubakti and Sopir follow standard office hours
+        const checkInEndStr = settings?.checkInEnd || "08:15";
+        const [h, m] = checkInEndStr.split(':').map(Number);
+        const endHour = h;
+        const endMinute = m;
         
         const currentHour = now.getHours();
         const currentMinute = now.getMinutes();
@@ -248,7 +236,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
           checkInAddress: address,
           checkInStatus: checkInStatus(),
           logbookNotes: logbookText || undefined,
-          shift: isSecurity ? selectedShift : undefined
+          shift: isSecurity ? 'Fleksibel' : undefined
         } : {
           checkOut: nowTime,
           checkOutPhoto: photoUrl,
@@ -402,43 +390,24 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
               <Eye onClick={() => setShowInfoPresensi(true)} className="w-5 h-5 text-sky-500 cursor-pointer hover:text-sky-600 transition-all active:scale-90" />
             </div>
 
-            {/* Role-Specific Work Schedule Header */}
+            {/* Khusus Security: Jadwal Fleksibel 24 Jam (Tanpa Batasan Shift) */}
             {isSecurity ? (
-              <div className="bg-amber-50/90 border border-amber-200/80 rounded-2xl p-3 space-y-2 select-none">
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-2xl p-3.5 space-y-2 select-none shadow-2xs">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-amber-900 font-extrabold text-[11px] uppercase tracking-wider">
-                    <Shield className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Jadwal Shift Security</span>
+                  <div className="flex items-center gap-1.5 text-amber-950 font-extrabold text-[11px] uppercase tracking-wider">
+                    <Shield className="w-4 h-4 text-amber-600" />
+                    <span>Jadwal Security: Fleksibel 24 Jam</span>
                   </div>
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-200/60 text-amber-900 font-mono">
-                    {selectedShift === 'pagi' 
-                      ? `${settings.securityShiftPagiStart || '07:00'} - ${settings.securityShiftPagiOut || '15:00'}` 
-                      : `${settings.securityShiftMalamStart || '19:00'} - ${settings.securityShiftMalamOut || '07:00'}`}
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 font-mono">
+                    Bebas Jam Shift
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5 p-0.5 bg-amber-200/40 rounded-xl">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedShift('pagi')}
-                    className={`py-1.5 text-[11px] font-extrabold rounded-lg transition-all ${
-                      selectedShift === 'pagi'
-                        ? 'bg-amber-600 text-white shadow-sm'
-                        : 'text-amber-900 hover:bg-amber-300/40'
-                    }`}
-                  >
-                    Shift Pagi
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedShift('malam')}
-                    className={`py-1.5 text-[11px] font-extrabold rounded-lg transition-all ${
-                      selectedShift === 'malam'
-                        ? 'bg-amber-600 text-white shadow-sm'
-                        : 'text-amber-900 hover:bg-amber-300/40'
-                    }`}
-                  >
-                    Shift Malam
-                  </button>
+                <p className="text-[10.5px] text-amber-900 leading-relaxed font-medium">
+                  Absensi Security sepenuhnya fleksibel 24 jam tanpa dibatasi shift kaku. Waktu presensi masuk & pulang tercatat otomatis sesuai waktu penugasan riil Anda di kantor.
+                </p>
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-800 font-semibold bg-white/70 py-1.5 px-2.5 rounded-lg border border-amber-200/60">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Presensi masuk selalu dihitung <strong>Tepat Waktu</strong> kapan pun Anda bertugas.</span>
                 </div>
               </div>
             ) : (

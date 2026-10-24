@@ -97,7 +97,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     position: "Security / Petugas Keamanan",
     joinDate: "2024-01-01",
     cutiQuota: 12,
-    shift: "pagi",
+    shift: "Fleksibel",
     status: "aktif"
   },
   {
@@ -109,7 +109,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     position: "Security / Petugas Keamanan",
     joinDate: "2024-01-01",
     cutiQuota: 12,
-    shift: "pagi",
+    shift: "Fleksibel",
     status: "aktif"
   },
   {
@@ -121,7 +121,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     position: "Security / Petugas Keamanan",
     joinDate: "2024-01-01",
     cutiQuota: 12,
-    shift: "pagi",
+    shift: "Fleksibel",
     status: "aktif"
   },
   {
@@ -144,7 +144,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     position: "Security / Petugas Keamanan",
     joinDate: "2024-01-01",
     cutiQuota: 12,
-    shift: "pagi",
+    shift: "Fleksibel",
     status: "aktif"
   },
   {
@@ -156,7 +156,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     position: "Security / Petugas Keamanan",
     joinDate: "2024-01-01",
     cutiQuota: 12,
-    shift: "pagi",
+    shift: "Fleksibel",
     status: "aktif"
   },
   {
@@ -223,7 +223,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     position: "Security / Petugas Keamanan",
     joinDate: "2024-01-01",
     cutiQuota: 12,
-    shift: "pagi",
+    shift: "Fleksibel",
     status: "aktif"
   },
   {
