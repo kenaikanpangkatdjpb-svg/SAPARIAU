@@ -11,7 +11,8 @@ import {
   NON_PPNPN_IDS,
   markEmployeeAsDeleted,
   isEmployeeDeleted,
-  unmarkEmployeeAsDeleted
+  unmarkEmployeeAsDeleted,
+  mergeDeletedEmployeeIds
 } from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
 import { 
@@ -31,6 +32,8 @@ import {
   upsertOvertimeToSupabase,
   subscribeToAttendanceFromSupabase,
   subscribeToEmployeesFromSupabase,
+  getDeletedEmployeesFromSupabase,
+  subscribeToDeletedEmployeesFromSupabase,
   deleteEmployeeFromSupabase,
   deleteLeaveFromSupabase,
   deleteAttendanceFromSupabase,
@@ -154,7 +157,17 @@ export default function App() {
         // Immediately purge non-PPNPN records in the background
         purgeNonPpnpnFromSupabase().catch(() => {});
 
-        // Sync Employees
+        // 1. Sync deleted records from cloud first
+        try {
+          const remoteDeleted = await getDeletedEmployeesFromSupabase();
+          if (remoteDeleted && remoteDeleted.length > 0) {
+            mergeDeletedEmployeeIds(remoteDeleted);
+          }
+        } catch (e) {
+          console.warn("Notice syncing deleted employee records:", e);
+        }
+
+        // 2. Sync Employees (Cloud is authoritative)
         const rawDbEmps = await getEmployeesFromSupabase();
         const dbEmps = (rawDbEmps || []).filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
         
@@ -165,25 +178,15 @@ export default function App() {
           }
         });
 
-        const activeLocalEmps = data.employees.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
-
         if (dbEmps.length > 0) {
-          const empMap = new Map<string, Employee>();
-          activeLocalEmps.forEach(e => empMap.set(e.id.toLowerCase(), e));
-          dbEmps.forEach(e => empMap.set(e.id.toLowerCase(), e));
-          const mergedEmps = Array.from(empMap.values()).filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
-          setEmployees(mergedEmps);
-          safeSetLocalStorageItem('ppnpn_employees', mergedEmps);
-          if (!isSupabaseQuotaExceeded()) {
-            for (const emp of mergedEmps) {
-              if (!isEmployeeDeleted(emp.id, emp.name) && !dbEmps.some(d => d.id.toLowerCase() === emp.id.toLowerCase())) {
-                await upsertEmployeeToSupabase(emp);
-              }
-            }
+          setEmployees(dbEmps);
+          safeSetLocalStorageItem('ppnpn_employees', dbEmps);
+        } else {
+          const activeLocalEmps = data.employees.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
+          if (activeLocalEmps.length > 0) {
+            setEmployees(activeLocalEmps);
+            safeSetLocalStorageItem('ppnpn_employees', activeLocalEmps);
           }
-        } else if (activeLocalEmps.length > 0) {
-          setEmployees(activeLocalEmps);
-          safeSetLocalStorageItem('ppnpn_employees', activeLocalEmps);
         }
 
         // Sync Regular Attendance
@@ -353,28 +356,22 @@ export default function App() {
     });
 
     const unsubEmp = subscribeToEmployeesFromSupabase((dbEmps) => {
-      if (dbEmps && dbEmps.length > 0) {
-        setEmployees(prev => {
-          const remoteMap = new Map<string, Employee>();
-          dbEmps
-            .filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name))
-            .forEach(e => remoteMap.set((e.id || '').toLowerCase(), e));
-          
-          const updatedPrev = prev
-            .filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name))
-            .map(e => {
-              const remote = remoteMap.get((e.id || '').toLowerCase());
-              if (remote) {
-                remoteMap.delete((e.id || '').toLowerCase());
-                return { ...remote, ...e };
-              }
-              return e;
-            });
+      if (dbEmps) {
+        const cleanDbEmps = dbEmps.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
+        if (cleanDbEmps.length > 0) {
+          setEmployees(cleanDbEmps);
+          safeSetLocalStorageItem('ppnpn_employees', cleanDbEmps);
+        }
+      }
+    });
 
-          const newEmps = Array.from(remoteMap.values()).filter(e => !isEmployeeDeleted(e.id, e.name));
-          const merged = [...updatedPrev, ...newEmps].filter(e => !isEmployeeDeleted(e.id, e.name));
-          safeSetLocalStorageItem('ppnpn_employees', merged);
-          return merged;
+    const unsubDel = subscribeToDeletedEmployeesFromSupabase((deletedIds) => {
+      if (deletedIds && deletedIds.length > 0) {
+        mergeDeletedEmployeeIds(deletedIds);
+        setEmployees(prev => {
+          const filtered = prev.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
+          safeSetLocalStorageItem('ppnpn_employees', filtered);
+          return filtered;
         });
       }
     });
@@ -410,6 +407,7 @@ export default function App() {
       try {
         if (typeof unsubAtt === 'function') unsubAtt();
         if (typeof unsubEmp === 'function') unsubEmp();
+        if (typeof unsubDel === 'function') unsubDel();
       } catch {}
       clearInterval(interval);
       window.removeEventListener('focus', handleNetworkChange);
@@ -667,23 +665,33 @@ export default function App() {
     });
   };
 
-  const handleDeleteEmployee = async (id: string) => {
+  const handleDeleteEmployee = async (id: string, name?: string) => {
     const cleanId = (id || '').trim();
     const cleanIdLower = cleanId.toLowerCase();
     
     // Find target employee to get name
-    const targetEmp = employees.find(e => (e.id || '').trim().toLowerCase() === cleanIdLower);
-    const empName = targetEmp?.name || '';
+    const targetEmp = employees.find(e => 
+      (e.id || '').trim().toLowerCase() === cleanIdLower ||
+      (cleanId && (e.id || '').trim() === cleanId) ||
+      (name && e.name && e.name.trim().toLowerCase() === name.trim().toLowerCase())
+    );
+    const empName = name || targetEmp?.name || '';
 
     // 1. Mark as permanently deleted in storage
     markEmployeeAsDeleted(cleanId, empName);
+    if (cleanIdLower !== cleanId) {
+      markEmployeeAsDeleted(cleanIdLower, empName);
+    }
+    if (targetEmp?.id) {
+      markEmployeeAsDeleted(targetEmp.id, targetEmp.name);
+    }
 
     // 2. Remove immediately from React state and localStorage
     setEmployees(prev => {
       const updated = prev.filter(e => {
-        const matchId = (e.id || '').trim().toLowerCase() === cleanIdLower;
+        const matchId = (e.id || '').trim().toLowerCase() === cleanIdLower || (cleanId && (e.id || '').trim() === cleanId);
         const matchName = empName && e.name && e.name.trim().toLowerCase() === empName.trim().toLowerCase();
-        return !matchId && !matchName;
+        return !matchId && !matchName && !isEmployeeDeleted(e.id, e.name);
       });
       saveEmployees(updated);
       safeSetLocalStorageItem('ppnpn_employees', updated);

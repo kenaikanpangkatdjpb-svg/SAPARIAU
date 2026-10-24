@@ -53,6 +53,21 @@ export const getDeletedEmployeeIds = (): string[] => {
   }
 };
 
+export const mergeDeletedEmployeeIds = (newDeletedIds: string[]) => {
+  try {
+    const deleted = getDeletedEmployeeIds();
+    const set = new Set(deleted);
+    for (const raw of newDeletedIds) {
+      if (!raw) continue;
+      const clean = raw.trim().toLowerCase();
+      if (clean) set.add(clean);
+    }
+    localStorage.setItem(DELETED_EMPLOYEES_KEY, JSON.stringify(Array.from(set)));
+  } catch (err) {
+    console.warn("Failed to merge deleted employee IDs in storage:", err);
+  }
+};
+
 export const markEmployeeAsDeleted = (id: string, name?: string) => {
   try {
     const deleted = getDeletedEmployeeIds();
@@ -85,7 +100,17 @@ export const isEmployeeDeleted = (id?: string | null, name?: string | null): boo
   const cleanId = (id || '').trim().toLowerCase();
   const cleanName = (name || '').trim().toLowerCase();
   if (cleanId && deleted.includes(cleanId)) return true;
-  if (cleanName && deleted.includes(`name:${cleanName}`)) return true;
+  if (cleanName) {
+    if (deleted.includes(`name:${cleanName}`)) return true;
+    for (const item of deleted) {
+      if (item.startsWith('name:')) {
+        const delName = item.slice(5).trim();
+        if (delName && (delName === cleanName || cleanName.includes(delName) || delName.includes(cleanName))) {
+          return true;
+        }
+      }
+    }
+  }
   return false;
 };
 
@@ -620,9 +645,9 @@ export const getStoredData = () => {
   let settings = localStorage.getItem(KEYS.SETTINGS);
 
   if (!employees) {
-    const initialEmployees = isReset
+    const initialEmployees = (isReset
       ? DEFAULT_EMPLOYEES.filter(e => e.role === 'admin')
-      : DEFAULT_EMPLOYEES;
+      : DEFAULT_EMPLOYEES).filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
     safeSetLocalStorageItem(KEYS.EMPLOYEES, initialEmployees);
     employees = JSON.stringify(initialEmployees);
   }

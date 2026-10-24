@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Search, Key, Mail, UserCheck, Trash2, Edit2, X, AlertTriangle, Shield, Car, Briefcase, Clock } from 'lucide-react';
 import { Employee, Role } from '../types';
+import { isEmployeeDeleted, isNonPpnpn } from '../utils/storage';
 
 interface PegawaiViewProps {
   currentUser: Employee;
   employees: Employee[];
   onAddEmployee: (newEmp: Employee) => void | Promise<void>;
-  onDeleteEmployee: (id: string) => void | Promise<void>;
+  onDeleteEmployee: (id: string, name?: string) => void | Promise<void>;
   onEditEmployee: (updatedEmp: Employee, oldId?: string) => void | Promise<void>;
 }
 
@@ -45,6 +46,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
 
   const filteredEmployees = employees.filter(emp => {
     if (!emp) return false;
+    if (isEmployeeDeleted(emp.id, emp.name) || isNonPpnpn(emp.id, emp.name)) return false;
     const nameStr = (emp.name || '').toLowerCase();
     const idStr = (emp.id || '').toLowerCase();
     const posStr = (emp.position || '').toLowerCase();
@@ -237,7 +239,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
 
   const executeDelete = () => {
     if (employeeToDelete) {
-      onDeleteEmployee(employeeToDelete.id);
+      onDeleteEmployee(employeeToDelete.id, employeeToDelete.name);
       if (editingEmployee && editingEmployee.id === employeeToDelete.id) {
         handleCancelEdit();
       }

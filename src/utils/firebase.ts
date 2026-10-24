@@ -808,17 +808,49 @@ export const subscribeToAttendanceFromFirebase = (callback: (records: Attendance
 export const subscribeToEmployeesFromFirebase = (callback: (emps: Employee[]) => void) => {
   try {
     return onSnapshot(collection(db, 'ppnpn_employees'), (snap) => {
-      if (!snap.empty) {
-        const list = snap.docs
-          .map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }))
-          .filter(emp => !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name));
-        callback(list);
+      if (snap.empty) {
+        callback([]);
+        return;
       }
+      const list = snap.docs
+        .map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }))
+        .filter(emp => !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name));
+      callback(list);
     }, (error) => {
       console.warn("[Firebase] onSnapshot employees error:", error?.message || error);
     });
   } catch (err) {
     console.warn("[Firebase] subscribeToEmployeesFromFirebase caught error:", err);
+    return () => {};
+  }
+};
+
+export const getDeletedEmployeesFromFirebase = async (): Promise<string[]> => {
+  try {
+    const delDocRef = doc(db, 'ppnpn_settings', 'deleted_records');
+    const delSnap = await getDoc(delDocRef);
+    if (delSnap.exists()) {
+      return delSnap.data()?.deletedEmployeeIds || [];
+    }
+    return [];
+  } catch (err) {
+    console.warn("Notice reading deleted employee IDs from Firebase:", err);
+    return [];
+  }
+};
+
+export const subscribeToDeletedEmployeesFromFirebase = (callback: (deletedIds: string[]) => void) => {
+  try {
+    return onSnapshot(doc(db, 'ppnpn_settings', 'deleted_records'), (snap) => {
+      if (snap.exists()) {
+        const ids: string[] = snap.data()?.deletedEmployeeIds || [];
+        callback(ids);
+      }
+    }, (error) => {
+      console.warn("[Firebase] onSnapshot deleted_records error:", error?.message || error);
+    });
+  } catch (err) {
+    console.warn("[Firebase] subscribeToDeletedEmployeesFromFirebase caught error:", err);
     return () => {};
   }
 };

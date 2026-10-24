@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Key, User, LogIn, CheckCircle, ShieldCheck } from 'lucide-react';
+import { Key, User, LogIn, CheckCircle, ShieldCheck, AlertCircle } from 'lucide-react';
 import { Employee } from '../types';
+import { isEmployeeDeleted } from '../utils/storage';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: Employee) => void;
@@ -15,15 +16,17 @@ export default function LoginScreen({ onLoginSuccess, employees }: LoginScreenPr
   });
 
   const [message, setMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage('');
     if (!loginForm.id || !loginForm.password) return;
 
-    // Search by ID/Username, Email, or Full Name
+    // Search by ID/Username, Email, or Full Name (excluding any deleted employee)
     const query = loginForm.id.trim().toLowerCase();
     const foundUser = employees.find(
-      emp => (
+      emp => !isEmployeeDeleted(emp.id, emp.name) && (
         emp.id.toLowerCase() === query || 
         emp.email.toLowerCase() === query ||
         emp.name.toLowerCase() === query ||
@@ -34,7 +37,7 @@ export default function LoginScreen({ onLoginSuccess, employees }: LoginScreenPr
     if (foundUser) {
       onLoginSuccess(foundUser);
     } else {
-      alert("User atau Kata Sandi Anda salah!");
+      setErrorMessage("Username atau Kata Sandi Anda salah!");
     }
   };
 
@@ -62,6 +65,13 @@ export default function LoginScreen({ onLoginSuccess, employees }: LoginScreenPr
             <div className="mb-5 p-3.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-lg text-xs font-semibold flex items-center gap-2">
               <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
               <span>{message}</span>
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="mb-5 p-3.5 bg-rose-50 text-rose-600 border border-rose-100 rounded-lg text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>{errorMessage}</span>
             </div>
           )}
 
