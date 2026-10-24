@@ -42,6 +42,53 @@ export const isNonPpnpn = (id?: string | null, name?: string | null): boolean =>
   return false;
 };
 
+export const DELETED_EMPLOYEES_KEY = 'ppnpn_deleted_employee_ids';
+
+export const getDeletedEmployeeIds = (): string[] => {
+  try {
+    const stored = localStorage.getItem(DELETED_EMPLOYEES_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const markEmployeeAsDeleted = (id: string, name?: string) => {
+  try {
+    const deleted = getDeletedEmployeeIds();
+    const cleanId = (id || '').trim().toLowerCase();
+    const cleanName = (name || '').trim().toLowerCase();
+    const set = new Set(deleted);
+    if (cleanId) set.add(cleanId);
+    if (cleanName) set.add(`name:${cleanName}`);
+    localStorage.setItem(DELETED_EMPLOYEES_KEY, JSON.stringify(Array.from(set)));
+  } catch (err) {
+    console.warn("Failed to mark employee as deleted in storage:", err);
+  }
+};
+
+export const unmarkEmployeeAsDeleted = (id: string, name?: string) => {
+  try {
+    const deleted = getDeletedEmployeeIds();
+    const cleanId = (id || '').trim().toLowerCase();
+    const cleanName = (name || '').trim().toLowerCase();
+    const filtered = deleted.filter(item => item !== cleanId && item !== `name:${cleanName}`);
+    localStorage.setItem(DELETED_EMPLOYEES_KEY, JSON.stringify(filtered));
+  } catch (err) {
+    console.warn("Failed to unmark employee as deleted in storage:", err);
+  }
+};
+
+export const isEmployeeDeleted = (id?: string | null, name?: string | null): boolean => {
+  const deleted = getDeletedEmployeeIds();
+  if (deleted.length === 0) return false;
+  const cleanId = (id || '').trim().toLowerCase();
+  const cleanName = (name || '').trim().toLowerCase();
+  if (cleanId && deleted.includes(cleanId)) return true;
+  if (cleanName && deleted.includes(`name:${cleanName}`)) return true;
+  return false;
+};
+
 // Default mock data to populate immediately
 export const DEFAULT_EMPLOYEES: Employee[] = [
   {
@@ -600,8 +647,8 @@ export const getStoredData = () => {
   }
 
   let parsedEmployees = JSON.parse(employees) as Employee[];
-  // Dynamic filter out of non-PPNPN (Jonathan, Budi, Hendra, Agus, Dedi, Fitri, Siti, Robert, Lucas)
-  parsedEmployees = parsedEmployees.filter(e => !isNonPpnpn(e.id, e.name) && e.id !== 'robert' && e.id !== 'lucas');
+  // Dynamic filter out of non-PPNPN and deleted employees
+  parsedEmployees = parsedEmployees.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name) && e.id !== 'robert' && e.id !== 'lucas');
 
   // Assign specific roles and default status of 'aktif' to any employee without status
   parsedEmployees = parsedEmployees.map(e => {
@@ -619,31 +666,27 @@ export const getStoredData = () => {
     return {
       ...e,
       role: r,
-      shift: r === 'security' ? (e.shift || 'pagi') : e.shift,
+      shift: r === 'security' ? 'Fleksibel' : e.shift,
       status: e.status || 'aktif'
     };
   });
 
-  // Ensure all genuine PPNPN and admin accounts are present if not yet registered
-  for (const defEmp of DEFAULT_EMPLOYEES) {
-    const existing = parsedEmployees.find(e => e.id.toLowerCase() === defEmp.id.toLowerCase());
-    if (!existing) {
-      const nameMatch = parsedEmployees.find(e => e.name && defEmp.name && e.name.toLowerCase() === defEmp.name.toLowerCase());
-      if (!nameMatch) {
-        parsedEmployees.push({ ...defEmp });
-      }
-    } else {
-      // Retain edited employee properties while ensuring required fields exist
+  // Retain edited employee properties while ensuring required fields exist for existing active employees
+  // NEVER resurrect deleted employees from DEFAULT_EMPLOYEES!
+  parsedEmployees = parsedEmployees.map(existing => {
+    const defEmp = DEFAULT_EMPLOYEES.find(e => e.id.toLowerCase() === existing.id.toLowerCase() || (e.name && existing.name && e.name.toLowerCase() === existing.name.toLowerCase()));
+    if (defEmp) {
       if (!existing.password) existing.password = defEmp.password;
       if (!existing.position) existing.position = defEmp.position;
       if (!existing.role || existing.role === 'karyawan') existing.role = defEmp.role;
-      if (existing.role === 'security' && !existing.shift) existing.shift = defEmp.shift || 'pagi';
+      if (existing.role === 'security' && !existing.shift) existing.shift = 'Fleksibel';
       if (typeof existing.cutiQuota !== 'number') existing.cutiQuota = defEmp.cutiQuota;
     }
-  }
+    return existing;
+  });
 
-  // Ensure non-PPNPN entries are strictly removed from cached storage
-  parsedEmployees = parsedEmployees.filter(e => !isNonPpnpn(e.id, e.name));
+  // Ensure non-PPNPN and deleted entries are strictly removed from cached storage
+  parsedEmployees = parsedEmployees.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
   safeSetLocalStorageItem(KEYS.EMPLOYEES, parsedEmployees);
 
   let parsedAttendance: Attendance[] = [];

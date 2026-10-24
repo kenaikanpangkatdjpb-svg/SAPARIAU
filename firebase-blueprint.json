@@ -99,6 +99,19 @@
         "script_url": { "type": "string", "description": "URL Google Apps Script" }
       },
       "required": ["id"]
+    },
+    "BackupSnapshot": {
+      "title": "BackupSnapshot",
+      "description": "Snapshot cadangan database aplikasi",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unik snapshot cadangan" },
+        "createdAt": { "type": "string", "description": "Waktu pembuatan snapshot" },
+        "createdBy": { "type": "string", "description": "Nama admin pembuat snapshot" },
+        "note": { "type": "string", "description": "Catatan ringkas snapshot" },
+        "dataJson": { "type": "string", "description": "Data paket cadangan dalam format JSON" }
+      },
+      "required": ["id", "createdAt", "dataJson"]
     }
   },
   "firestore": {
@@ -121,6 +134,10 @@
     "/ppnpn_settings/{settingsId}": {
       "schema": "OfficeSettings",
       "description": "Koleksi pengaturan jam dan radius presensi kantor"
+    },
+    "/ppnpn_backups/{backupId}": {
+      "schema": "BackupSnapshot",
+      "description": "Koleksi snapshot cadangan sistem dan database"
     }
   }
 }

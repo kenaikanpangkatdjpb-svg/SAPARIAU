@@ -1,5 +1,18 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { getStoredData, saveEmployees, saveAttendance, saveLeaves, saveLogbooks, saveSettings, safeSetLocalStorageItem, isNonPpnpn, NON_PPNPN_IDS } from './utils/storage';
+import { 
+  getStoredData, 
+  saveEmployees, 
+  saveAttendance, 
+  saveLeaves, 
+  saveLogbooks, 
+  saveSettings, 
+  safeSetLocalStorageItem, 
+  isNonPpnpn, 
+  NON_PPNPN_IDS,
+  markEmployeeAsDeleted,
+  isEmployeeDeleted,
+  unmarkEmployeeAsDeleted
+} from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
 import { 
   checkSupabaseConnection,
@@ -143,36 +156,34 @@ export default function App() {
 
         // Sync Employees
         const rawDbEmps = await getEmployeesFromSupabase();
-        const dbEmps = (rawDbEmps || []).filter(e => !isNonPpnpn(e.id, e.name));
+        const dbEmps = (rawDbEmps || []).filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
         
-        // Delete any non-PPNPNs discovered in remote database
+        // Delete any non-PPNPNs or deleted employees discovered in remote database
         (rawDbEmps || []).forEach(e => {
-          if (isNonPpnpn(e.id, e.name)) {
-            deleteEmployeeFromSupabase(e.id).catch(() => {});
+          if (isNonPpnpn(e.id, e.name) || isEmployeeDeleted(e.id, e.name)) {
+            deleteEmployeeFromSupabase(e.id, e.name).catch(() => {});
           }
         });
 
+        const activeLocalEmps = data.employees.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
+
         if (dbEmps.length > 0) {
           const empMap = new Map<string, Employee>();
-          data.employees.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => empMap.set(e.id.toLowerCase(), e));
+          activeLocalEmps.forEach(e => empMap.set(e.id.toLowerCase(), e));
           dbEmps.forEach(e => empMap.set(e.id.toLowerCase(), e));
-          const mergedEmps = Array.from(empMap.values()).filter(e => !isNonPpnpn(e.id, e.name));
+          const mergedEmps = Array.from(empMap.values()).filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
           setEmployees(mergedEmps);
           safeSetLocalStorageItem('ppnpn_employees', mergedEmps);
           if (!isSupabaseQuotaExceeded()) {
             for (const emp of mergedEmps) {
-              if (!dbEmps.some(d => d.id.toLowerCase() === emp.id.toLowerCase())) {
+              if (!isEmployeeDeleted(emp.id, emp.name) && !dbEmps.some(d => d.id.toLowerCase() === emp.id.toLowerCase())) {
                 await upsertEmployeeToSupabase(emp);
               }
             }
           }
-        } else if (data.employees.length > 0) {
-          const validEmps = data.employees.filter(e => !isNonPpnpn(e.id, e.name));
-          if (!isSupabaseQuotaExceeded()) {
-            for (const emp of validEmps) {
-              await upsertEmployeeToSupabase(emp);
-            }
-          }
+        } else if (activeLocalEmps.length > 0) {
+          setEmployees(activeLocalEmps);
+          safeSetLocalStorageItem('ppnpn_employees', activeLocalEmps);
         }
 
         // Sync Regular Attendance
@@ -345,10 +356,12 @@ export default function App() {
       if (dbEmps && dbEmps.length > 0) {
         setEmployees(prev => {
           const remoteMap = new Map<string, Employee>();
-          dbEmps.filter(e => !isNonPpnpn(e.id, e.name)).forEach(e => remoteMap.set((e.id || '').toLowerCase(), e));
+          dbEmps
+            .filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name))
+            .forEach(e => remoteMap.set((e.id || '').toLowerCase(), e));
           
           const updatedPrev = prev
-            .filter(e => !isNonPpnpn(e.id, e.name))
+            .filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name))
             .map(e => {
               const remote = remoteMap.get((e.id || '').toLowerCase());
               if (remote) {
@@ -358,8 +371,8 @@ export default function App() {
               return e;
             });
 
-          const newEmps = Array.from(remoteMap.values());
-          const merged = [...updatedPrev, ...newEmps];
+          const newEmps = Array.from(remoteMap.values()).filter(e => !isEmployeeDeleted(e.id, e.name));
+          const merged = [...updatedPrev, ...newEmps].filter(e => !isEmployeeDeleted(e.id, e.name));
           safeSetLocalStorageItem('ppnpn_employees', merged);
           return merged;
         });
@@ -620,6 +633,9 @@ export default function App() {
   // Employee actions
   const handleAddEmployee = async (newEmp: Employee) => {
     const cleanId = (newEmp.id || '').trim().toLowerCase();
+    // Unmark in case ID was previously in deleted list
+    unmarkEmployeeAsDeleted(cleanId, newEmp.name);
+
     const normalizedEmp: Employee = {
       ...newEmp,
       id: cleanId,
@@ -652,9 +668,23 @@ export default function App() {
   };
 
   const handleDeleteEmployee = async (id: string) => {
-    const cleanId = (id || '').trim().toLowerCase();
+    const cleanId = (id || '').trim();
+    const cleanIdLower = cleanId.toLowerCase();
+    
+    // Find target employee to get name
+    const targetEmp = employees.find(e => (e.id || '').trim().toLowerCase() === cleanIdLower);
+    const empName = targetEmp?.name || '';
+
+    // 1. Mark as permanently deleted in storage
+    markEmployeeAsDeleted(cleanId, empName);
+
+    // 2. Remove immediately from React state and localStorage
     setEmployees(prev => {
-      const updated = prev.filter(e => (e.id || '').trim().toLowerCase() !== cleanId);
+      const updated = prev.filter(e => {
+        const matchId = (e.id || '').trim().toLowerCase() === cleanIdLower;
+        const matchName = empName && e.name && e.name.trim().toLowerCase() === empName.trim().toLowerCase();
+        return !matchId && !matchName;
+      });
       saveEmployees(updated);
       safeSetLocalStorageItem('ppnpn_employees', updated);
       return updated;
@@ -662,14 +692,20 @@ export default function App() {
 
     window.dispatchEvent(new Event('storage'));
 
-    deleteEmployeeFromSupabase(cleanId).catch(err => {
+    // 3. Delete from Firebase Firestore completely
+    deleteEmployeeFromSupabase(cleanId, empName).catch(err => {
       console.warn("Gagal menghapus pegawai dari Firebase:", err);
     });
+
+    showToast(`Data pegawai ${empName || id} berhasil dihapus permanen.`, "success", "Pegawai Dihapus");
   };
 
   const handleEditEmployee = async (updatedEmp: Employee, oldId?: string) => {
     const cleanOldId = (oldId || updatedEmp.id || '').trim().toLowerCase();
     const cleanNewId = (updatedEmp.id || '').trim().toLowerCase();
+
+    // Unmark cleanNewId in case it was in deleted list
+    unmarkEmployeeAsDeleted(cleanNewId, updatedEmp.name);
 
     const normalizedEmp: Employee = {
       ...updatedEmp,
@@ -1202,27 +1238,30 @@ export default function App() {
 
     localStorage.removeItem('app_is_reset');
 
-    // 3. Sync with Supabase Cloud if connected
+    // 3. Sync with Firebase Cloud in parallel batches if connected
     if (supabaseConnected) {
+      showToast("Sedang menyelaraskan data hasil restore ke cloud Firebase...", "info", "Sinkronisasi Cloud");
       try {
-        for (const emp of targetEmployees) {
-          await upsertEmployeeToSupabase(emp);
+        async function runInBatches<T>(items: T[], fn: (item: T) => Promise<any>, batchSize = 6) {
+          for (let i = 0; i < items.length; i += batchSize) {
+            const batch = items.slice(i, i + batchSize);
+            await Promise.allSettled(batch.map(fn));
+          }
         }
-        for (const att of targetAttendance) {
-          await upsertAttendanceToSupabase(att);
-        }
-        for (const l of targetLeaves) {
-          await upsertLeaveToSupabase(l);
-        }
-        for (const lb of targetLogbooks) {
-          await upsertLogbookToSupabase(lb);
-        }
+
+        await runInBatches(targetEmployees, upsertEmployeeToSupabase);
+        await runInBatches(targetAttendance, upsertAttendanceToSupabase);
+        await runInBatches(targetLeaves, upsertLeaveToSupabase);
+        await runInBatches(targetLogbooks, upsertLogbookToSupabase);
         if (targetSettings) {
           await upsertSettingsToSupabase(targetSettings);
         }
+        showToast("Restorasi data aplikasi & sinkronisasi cloud Firebase selesai!", "success", "Restorasi Berhasil");
       } catch (err) {
-        console.warn("Supabase restore sync warning", err);
+        console.warn("Firebase restore sync warning", err);
       }
+    } else {
+      showToast("Restorasi data lokal berhasil diterapkan!", "success", "Restorasi Berhasil");
     }
 
     window.dispatchEvent(new Event('storage'));

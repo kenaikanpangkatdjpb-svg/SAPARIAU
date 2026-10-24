@@ -29,6 +29,9 @@ import {
   getLastFirebaseError,
   isFirebaseQuotaExceeded,
   forceFirebaseOnline,
+  saveBackupSnapshotToFirebase,
+  getBackupSnapshotsFromFirebase,
+  deleteBackupSnapshotFromFirebase,
   isQuotaError,
   mapEmployeeToDb,
   mapEmployeeFromDb,
@@ -110,6 +113,10 @@ export const resetEmployeeQuotasTo12InSupabase = resetEmployeeQuotasTo12InFireba
 export const clearTransactionsFromSupabase = clearTransactionsFromFirebase;
 export const resetAllEmployeeQuotasInSupabase = resetAllEmployeeQuotasInFirebase;
 export const purgeNonPpnpnFromSupabase = purgeNonPpnpnFromFirebase;
+
+export const saveBackupSnapshotToSupabase = saveBackupSnapshotToFirebase;
+export const getBackupSnapshotsFromSupabase = getBackupSnapshotsFromFirebase;
+export const deleteBackupSnapshotFromSupabase = deleteBackupSnapshotFromFirebase;
 
 export const SQL_CREATION_SCRIPT = `-- Firebase Firestore Database Inisialisasi
 -- Aplikasi PPNPN telah bermigrasi penuh ke Firebase Firestore!

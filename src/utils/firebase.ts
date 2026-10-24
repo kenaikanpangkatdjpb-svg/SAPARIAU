@@ -16,7 +16,7 @@ import {
   limit
 } from 'firebase/firestore';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from '../types';
-import { isNonPpnpn, NON_PPNPN_IDS } from './storage';
+import { isNonPpnpn, NON_PPNPN_IDS, isEmployeeDeleted, markEmployeeAsDeleted } from './storage';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
 
 // Resolves Firebase config: prioritizes VITE_FIREBASE_* environment variables (for Vercel/production),
@@ -412,17 +412,17 @@ export const getEmployeesFromFirebase = async (force: boolean = false): Promise<
     if (snap.empty) return [];
     const list = snap.docs
       .map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }))
-      .filter(emp => !isNonPpnpn(emp.id, emp.name));
+      .filter(emp => !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name));
     return list;
   } catch (e: any) {
     if (isQuotaError(e)) {
       setFirebaseQuotaExceeded(true);
       lastFirebaseError = "Batas kuota harian Firebase Firestore Free Tier tercapai. Menampilkan data tersimpan di perangkat.";
       console.warn("[Firebase] Kuota baca Firestore tercapai saat mengambil pegawai. Menggunakan data cache lokal.");
-      return getLocalCache<Employee[]>('ppnpn_employees', []).filter(emp => !isNonPpnpn(emp.id, emp.name));
+      return getLocalCache<Employee[]>('ppnpn_employees', []).filter(emp => !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name));
     }
     console.warn("Gagal mengambil data pegawai dari Firebase, menggunakan cache lokal:", e?.message || e);
-    return getLocalCache<Employee[]>('ppnpn_employees', []).filter(emp => !isNonPpnpn(emp.id, emp.name));
+    return getLocalCache<Employee[]>('ppnpn_employees', []).filter(emp => !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name));
   }
 };
 
@@ -698,10 +698,65 @@ export const upsertSettingsToFirebase = async (settings: OfficeSettings, throwOn
   }
 };
 
-export const deleteEmployeeFromFirebase = async (id: string): Promise<boolean> => {
+export const deleteEmployeeFromFirebase = async (id: string, name?: string): Promise<boolean> => {
   try {
     delete readCacheTimestamps['employees'];
-    await deleteDoc(doc(db, 'ppnpn_employees', id));
+    const cleanId = (id || '').trim();
+    const cleanIdLower = cleanId.toLowerCase();
+    const cleanNameLower = (name || '').trim().toLowerCase();
+
+    // Mark as deleted in storage immediately
+    markEmployeeAsDeleted(cleanId, name);
+
+    // 1. Direct delete attempts by exact and lower ID
+    try {
+      await deleteDoc(doc(db, 'ppnpn_employees', cleanId));
+    } catch {}
+    if (cleanIdLower !== cleanId) {
+      try {
+        await deleteDoc(doc(db, 'ppnpn_employees', cleanIdLower));
+      } catch {}
+    }
+
+    // 2. Query and batch delete all documents matching ID or Name in collection
+    try {
+      const snap = await getDocs(collection(db, 'ppnpn_employees'));
+      const batch = writeBatch(db);
+      let count = 0;
+      snap.docs.forEach(d => {
+        const data = d.data();
+        const dId = (d.id || '').toLowerCase();
+        const dataId = (data.id || '').toString().toLowerCase();
+        const dataName = (data.name || '').toString().toLowerCase();
+
+        if (
+          dId === cleanIdLower ||
+          dataId === cleanIdLower ||
+          (cleanNameLower && dataName === cleanNameLower)
+        ) {
+          batch.delete(d.ref);
+          count++;
+        }
+      });
+      if (count > 0) {
+        await batch.commit();
+      }
+    } catch (err) {
+      console.warn("Notice during employee query deletion in Firebase:", err);
+    }
+
+    // 3. Record in Firestore 'ppnpn_settings/deleted_records'
+    try {
+      const delDocRef = doc(db, 'ppnpn_settings', 'deleted_records');
+      const delSnap = await getDoc(delDocRef);
+      const existingDel: string[] = delSnap.exists() ? (delSnap.data()?.deletedEmployeeIds || []) : [];
+      const updatedDel = Array.from(new Set([...existingDel, cleanIdLower, cleanId]));
+      if (cleanNameLower) updatedDel.push(`name:${cleanNameLower}`);
+      await setDoc(delDocRef, { deletedEmployeeIds: updatedDel, updatedAt: new Date().toISOString() }, { merge: true });
+    } catch (err) {
+      console.warn("Notice saving deleted record to Firebase:", err);
+    }
+
     delete readCacheTimestamps['employees'];
     return true;
   } catch (e: any) {
@@ -756,7 +811,7 @@ export const subscribeToEmployeesFromFirebase = (callback: (emps: Employee[]) =>
       if (!snap.empty) {
         const list = snap.docs
           .map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }))
-          .filter(emp => !isNonPpnpn(emp.id, emp.name));
+          .filter(emp => !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name));
         callback(list);
       }
     }, (error) => {
@@ -941,6 +996,79 @@ export const purgeNonPpnpnFromFirebase = async (): Promise<boolean> => {
       return true;
     }
     console.warn("Gagal membersihkan data non-PPNPN di Firebase:", e?.message || e);
+    return false;
+  }
+};
+
+export interface CloudSnapshotMeta {
+  id: string;
+  createdAt: string;
+  createdBy: string;
+  note?: string;
+  counts: {
+    employees: number;
+    attendance: number;
+    leaves: number;
+    logbooks: number;
+  };
+  dataJson?: string;
+}
+
+export const saveBackupSnapshotToFirebase = async (
+  pkg: any,
+  note: string = "Snapshot Cloud Manual"
+): Promise<{ success: boolean; id?: string; error?: string }> => {
+  try {
+    const id = `snapshot_${Date.now()}`;
+    const payload = {
+      id,
+      createdAt: new Date().toISOString(),
+      createdBy: pkg.exportedBy || 'Administrator',
+      note: note.trim() || 'Snapshot Cloud Manual',
+      counts: {
+        employees: Array.isArray(pkg.employees) ? pkg.employees.length : 0,
+        attendance: Array.isArray(pkg.attendance) ? pkg.attendance.length : 0,
+        leaves: Array.isArray(pkg.leaves) ? pkg.leaves.length : 0,
+        logbooks: Array.isArray(pkg.logbooks) ? pkg.logbooks.length : 0
+      },
+      dataJson: JSON.stringify(pkg)
+    };
+    await setDoc(doc(db, 'ppnpn_backups', id), payload);
+    return { success: true, id };
+  } catch (err: any) {
+    console.error("Gagal menyimpan snapshot ke Firebase:", err);
+    return { success: false, error: err?.message || String(err) };
+  }
+};
+
+export const getBackupSnapshotsFromFirebase = async (): Promise<CloudSnapshotMeta[]> => {
+  try {
+    const snap = await getDocs(collection(db, 'ppnpn_backups'));
+    if (snap.empty) return [];
+    const list: CloudSnapshotMeta[] = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        createdAt: data.createdAt || new Date().toISOString(),
+        createdBy: data.createdBy || 'Admin',
+        note: data.note || 'Snapshot Cloud',
+        counts: data.counts || { employees: 0, attendance: 0, leaves: 0, logbooks: 0 },
+        dataJson: data.dataJson
+      };
+    });
+    return list.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+  } catch (err) {
+    console.warn("Gagal mengambil daftar snapshot dari Firebase:", err);
+    return [];
+  }
+};
+
+export const deleteBackupSnapshotFromFirebase = async (id: string): Promise<boolean> => {
+  try {
+    await deleteDoc(doc(db, 'ppnpn_backups', id));
+    return true;
+  } catch (err) {
+    console.warn("Gagal menghapus snapshot dari Firebase:", err);
     return false;
   }
 };
