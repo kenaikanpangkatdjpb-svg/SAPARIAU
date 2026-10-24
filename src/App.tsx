@@ -64,6 +64,7 @@ import KopLogoSettingsView from './components/KopLogoSettingsView';
 import RekomendasiKIView from './components/RekomendasiKIView';
 import BackupRestoreView from './components/BackupRestoreView';
 import ResetDataView from './components/ResetDataView';
+import MobileHomeView from './components/MobileHomeView';
 
 // Extra Evaluation Views to match the requested image perfectly
 import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle, Users, PlusSquare, X, ExternalLink, CheckCircle } from 'lucide-react';
@@ -102,6 +103,23 @@ export default function App() {
     }
     return true;
   });
+  const [isMobileViewport, setIsMobileViewport] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 1024;
+    }
+    return false;
+  });
+  const [forceMobilePreview, setForceMobilePreview] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileViewport(window.innerWidth < 1024);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobileMode = isMobileViewport || forceMobilePreview;
   const [absenModalType, setAbsenModalType] = useState<'masuk' | 'pulang' | null>(null);
   const [selectedLemburMonthNum, setSelectedLemburMonthNum] = useState('06');
   const [selectedLemburYear, setSelectedLemburYear] = useState('2026');
@@ -1302,6 +1320,20 @@ export default function App() {
   const renderMainContent = () => {
     switch (activeView) {
       case 'dashboard':
+        if (isMobileMode) {
+          return (
+            <MobileHomeView
+              user={currentUser!}
+              settings={settings}
+              todayAttendance={todayAttendance}
+              employees={employees}
+              onOpenAbsenModal={setAbsenModalType}
+              onNavigateToView={handleViewChange}
+              onOpenSidebar={() => setSidebarOpen(true)}
+              onLogout={handleLogout}
+            />
+          );
+        }
         return (
           <DashboardView
             user={currentUser!}
@@ -1718,6 +1750,10 @@ export default function App() {
           settings={settings}
           onOpenAbsenModal={setAbsenModalType}
           onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+          activeView={activeView}
+          onNavigateToView={handleViewChange}
+          isMobileMode={forceMobilePreview}
+          onToggleMobileMode={() => setForceMobilePreview(prev => !prev)}
         />
 
         {/* Quota Exceeded Notification Banner */}
@@ -1751,8 +1787,12 @@ export default function App() {
         )}
 
         {/* COMPONENT ROUTER PANEL */}
-        <main className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-8 bg-slate-50">
-          <div className="max-w-7xl mx-auto">
+        <main className={`flex-1 overflow-y-auto ${
+          isMobileMode && activeView === 'dashboard'
+            ? 'p-0 pb-20 bg-slate-100/60'
+            : 'p-3.5 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-8 bg-slate-50'
+        }`}>
+          <div className={isMobileMode && activeView === 'dashboard' ? 'max-w-md mx-auto sm:py-3' : 'max-w-7xl mx-auto'}>
             {renderMainContent()}
           </div>
         </main>
@@ -1765,6 +1805,8 @@ export default function App() {
         onViewChange={handleViewChange}
         onOpenAbsenModal={setAbsenModalType}
         onOpenSidebar={() => setSidebarOpen(true)}
+        onLogout={handleLogout}
+        isForceMobile={forceMobilePreview}
       />
 
       {/* 4. CAPTURE PRESENCE MODAL */}
