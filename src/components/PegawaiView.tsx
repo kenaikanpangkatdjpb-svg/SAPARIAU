@@ -33,11 +33,11 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
   const [formData, setFormData] = useState({
     username: '',
     name: '',
-    position: '',
+    position: 'Pramubakti',
     password: '123',
     role: 'pramubakti' as Role,
     cutiQuota: 12,
-    shift: '' as 'pagi' | 'malam' | '',
+    shift: '' as 'pagi' | 'malam' | 'Fleksibel' | '',
     status: 'aktif' as 'aktif' | 'pindah' | 'tidak aktif'
   });
   const [successMsg, setSuccessMsg] = useState('');
@@ -160,7 +160,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
         setFormData({
           username: '',
           name: '',
-          position: '',
+          position: 'Pramubakti',
           password: '123',
           role: 'pramubakti',
           cutiQuota: 12,
@@ -173,14 +173,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
           document.getElementById(`emp-row-${cleanUsername}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 150);
       } else {
-        // Register Flow
-        if (employees.some(emp => (emp.id || '').trim().toLowerCase() === cleanUsername)) {
-          setErrorMsg(`Username "${cleanUsername}" sudah terdaftar! Gunakan username lain.`);
-          setIsSaving(false);
-          clearTimeout(safetyTimeout);
-          return;
-        }
-
+        // Register Flow (automatically saves/upserts to Firestore)
         const newEmp: Employee = {
           id: cleanUsername,
           name: cleanName,
@@ -201,7 +194,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
 
         setJustUpdatedId(cleanUsername);
         setTimeout(() => setJustUpdatedId(null), 4000);
-        setSuccessMsg(`Pegawai baru "${cleanName}" berhasil ditambahkan ke database!`);
+        setSuccessMsg(`Pegawai baru "${cleanName}" berhasil ditambahkan dan tersimpan otomatis ke database!`);
         
         // Reset form & filters so all employees and the new employee are immediately visible
         setSearchTerm('');
@@ -210,7 +203,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
         setFormData({
           username: '',
           name: '',
-          position: '',
+          position: 'Pramubakti',
           password: '123',
           role: 'pramubakti',
           cutiQuota: 12,
@@ -238,7 +231,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
     setFormData({
       username: '',
       name: '',
-      position: '',
+      position: 'Pramubakti',
       password: '123',
       role: 'pramubakti',
       cutiQuota: 12,
@@ -613,10 +606,9 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
               <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Jabatan / Posisi</label>
               <input
                 type="text"
-                required
                 value={formData.position}
                 onChange={(e) => setFormData({...formData, position: e.target.value})}
-                placeholder="Staf IT / Satpam / Administrasi"
+                placeholder="Pramubakti / Security / Pengemudi"
                 className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               />
             </div>

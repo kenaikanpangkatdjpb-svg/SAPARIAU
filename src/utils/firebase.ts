@@ -595,15 +595,14 @@ export const upsertEmployeeToFirebase = async (employee: Employee, throwOnError 
       setLocalCache('ppnpn_employees', updatedLocal);
     } catch {}
 
-    // Write employee document and remove from deleted_records in Firestore
+    // Write employee document first, then remove from deleted_records in Firestore
     const docRef = doc(db, 'ppnpn_employees', cleanId);
-    const writePromise = Promise.all([
-      setDoc(docRef, payload, { merge: true }),
-      unmarkEmployeeAsDeletedInFirebase(cleanId, cleanEmployee.name).catch(() => false)
-    ]).then(() => {
-      setFirebaseQuotaExceeded(false);
-      return true;
-    });
+    const writePromise = setDoc(docRef, payload, { merge: true })
+      .then(async () => {
+        setFirebaseQuotaExceeded(false);
+        await unmarkEmployeeAsDeletedInFirebase(cleanId, cleanEmployee.name).catch(() => false);
+        return true;
+      });
     const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 5000));
     
     await Promise.race([writePromise, timeoutPromise]);

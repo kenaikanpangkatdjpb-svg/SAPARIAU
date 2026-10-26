@@ -26,27 +26,8 @@ export const NON_PPNPN_IDS = [
   'test_emp_123'
 ];
 
-// Legacy dummy or deleted IDs that should never appear in active PPNPN employee lists
+// Legacy dummy test IDs that should never appear in active PPNPN employee lists
 export const LEGACY_REMOVED_IDS = [
-  'admin',
-  'admin1',
-  'andi_admin',
-  'maliq',
-  'malik',
-  'ratmansyah',
-  'zaza',
-  'rudi',
-  'aditya',
-  'reksi',
-  'rajab',
-  'sinta',
-  'tia',
-  'adit',
-  '001',
-  'bulan',
-  'dian',
-  'ditta',
-  'masryan',
   'testuser1',
   'test_emp_123'
 ];
@@ -110,7 +91,7 @@ export const setDeletedEmployeeIds = (newDeletedIds: string[]) => {
   try {
     const unmarked = new Set(getUnmarkedEmployeeIds());
     const set = new Set<string>();
-    for (const raw of [...LEGACY_REMOVED_IDS, ...newDeletedIds]) {
+    for (const raw of newDeletedIds) {
       if (!raw) continue;
       const clean = raw.trim().toLowerCase();
       if (clean && !PROTECTED_ADMIN_IDS.includes(clean) && !unmarked.has(clean)) {
@@ -305,6 +286,18 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     status: "aktif"
   },
   {
+    id: "atan",
+    name: "RATMANSYAH",
+    email: "atan@ppnpn.com",
+    role: "security",
+    password: "123",
+    position: "Security / Petugas Keamanan",
+    joinDate: "2026-10-26",
+    cutiQuota: 6,
+    shift: "Fleksibel",
+    status: "aktif"
+  },
+  {
     id: "bambang",
     name: "BAMBANG OETOYO PUTRA",
     email: "bambang@ppnpn.com",
@@ -324,6 +317,17 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     position: "Pramubakti",
     joinDate: "2026-07-02",
     cutiQuota: 5,
+    status: "aktif"
+  },
+  {
+    id: "maliq",
+    name: "REKSI JUMALIK ABDUL",
+    email: "maliq@ppnpn.com",
+    role: "pramubakti",
+    password: "123",
+    position: "Pramubakti",
+    joinDate: "2026-10-26",
+    cutiQuota: 4,
     status: "aktif"
   },
   {
@@ -347,6 +351,17 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     joinDate: "2024-01-01",
     cutiQuota: 4,
     shift: "Fleksibel",
+    status: "aktif"
+  },
+  {
+    id: "tia",
+    name: "SINTA RAHMANING TIA",
+    email: "tia@ppnpn.com",
+    role: "pramubakti",
+    password: "123",
+    position: "Pramubakti",
+    joinDate: "2026-10-26",
+    cutiQuota: 4,
     status: "aktif"
   },
   {
@@ -668,14 +683,14 @@ export const getStoredData = () => {
   const isResetLogbooks = isReset || localStorage.getItem('app_is_reset_logbook') === 'true';
 
   // Ensure stale dummy data from older default templates is replaced with production sapariau.vercel.app data
-  if (localStorage.getItem('ppnpn_vercel_sync_v4') !== 'true') {
+  if (localStorage.getItem('ppnpn_vercel_sync_v6') !== 'true') {
     localStorage.removeItem(KEYS.EMPLOYEES);
     localStorage.removeItem(KEYS.LEAVES);
     localStorage.removeItem(KEYS.SETTINGS);
     localStorage.removeItem(DELETED_EMPLOYEES_KEY);
     localStorage.removeItem('firebase_firestore_quota_exceeded_date');
     localStorage.removeItem('firebase_quota_exceeded_sapariau-e99eb');
-    localStorage.setItem('ppnpn_vercel_sync_v4', 'true');
+    localStorage.setItem('ppnpn_vercel_sync_v6', 'true');
   }
 
   // Check if data is already seeded with old NIP format, if so, reset
