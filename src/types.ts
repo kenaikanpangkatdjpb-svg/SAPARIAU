@@ -12,6 +12,7 @@ export interface Employee {
   cutiQuota: number;
   shift?: 'pagi' | 'malam' | 'Fleksibel' | string; // Security Fleksibel 24 Jam
   status?: 'aktif' | 'pindah' | 'tidak aktif';
+  updatedAt?: string;
 }
 
 export interface Attendance {

@@ -45,6 +45,7 @@ import {
   mapSettingsFromDb,
   activeFirebaseConfig,
   getDeletedEmployeesFromFirebase,
+  unmarkEmployeeAsDeletedInFirebase,
   subscribeToDeletedEmployeesFromFirebase,
   db
 } from './firebase';
@@ -107,6 +108,7 @@ export const upsertOvertimeToSupabase = upsertOvertimeToFirebase;
 export const subscribeToAttendanceFromSupabase = subscribeToAttendanceFromFirebase;
 export const subscribeToEmployeesFromSupabase = subscribeToEmployeesFromFirebase;
 export const getDeletedEmployeesFromSupabase = getDeletedEmployeesFromFirebase;
+export const unmarkEmployeeAsDeletedFromSupabase = unmarkEmployeeAsDeletedInFirebase;
 export const subscribeToDeletedEmployeesFromSupabase = subscribeToDeletedEmployeesFromFirebase;
 
 export const clearAttendanceFromSupabase = clearAttendanceFromFirebase;

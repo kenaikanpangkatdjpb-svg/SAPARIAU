@@ -12,7 +12,8 @@ import {
   markEmployeeAsDeleted,
   isEmployeeDeleted,
   unmarkEmployeeAsDeleted,
-  mergeDeletedEmployeeIds
+  mergeDeletedEmployeeIds,
+  DEFAULT_EMPLOYEES
 } from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
 import { 
@@ -33,6 +34,7 @@ import {
   subscribeToAttendanceFromSupabase,
   subscribeToEmployeesFromSupabase,
   getDeletedEmployeesFromSupabase,
+  unmarkEmployeeAsDeletedFromSupabase,
   subscribeToDeletedEmployeesFromSupabase,
   deleteEmployeeFromSupabase,
   deleteLeaveFromSupabase,
@@ -167,7 +169,7 @@ export default function App() {
           console.warn("Notice syncing deleted employee records:", e);
         }
 
-        // 2. Sync Employees (Cloud is authoritative)
+        // 2. Sync Employees (Intelligent merge so employees are never lost or wiped out)
         const rawDbEmps = await getEmployeesFromSupabase();
         const dbEmps = (rawDbEmps || []).filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
         
@@ -178,14 +180,53 @@ export default function App() {
           }
         });
 
-        if (dbEmps.length > 0) {
-          setEmployees(dbEmps);
-          safeSetLocalStorageItem('ppnpn_employees', dbEmps);
-        } else {
-          const activeLocalEmps = data.employees.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
-          if (activeLocalEmps.length > 0) {
-            setEmployees(activeLocalEmps);
-            safeSetLocalStorageItem('ppnpn_employees', activeLocalEmps);
+        const empMap = new Map<string, Employee>();
+        // Add local employees first
+        data.employees
+          .filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name))
+          .forEach(e => empMap.set((e.id || '').trim().toLowerCase(), e));
+
+        // Overlay with database records intelligently
+        dbEmps.forEach(e => {
+          const key = (e.id || '').trim().toLowerCase();
+          const existing = empMap.get(key);
+          if (!existing) {
+            empMap.set(key, e);
+          } else {
+            const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+            const remoteTime = e.updatedAt ? new Date(e.updatedAt).getTime() : 0;
+            if (remoteTime >= existingTime) {
+              empMap.set(key, { ...existing, ...e });
+            } else {
+              // Local is newer: preserve recent local changes so data doesn't revert
+              empMap.set(key, { ...e, ...existing });
+            }
+          }
+        });
+
+        // Only if empMap is completely empty (first time run on blank database), seed with DEFAULT_EMPLOYEES
+        const isReset = typeof localStorage !== 'undefined' && localStorage.getItem('app_is_reset') === 'true';
+        if (!isReset && empMap.size === 0) {
+          DEFAULT_EMPLOYEES
+            .filter(d => !isNonPpnpn(d.id, d.name) && !isEmployeeDeleted(d.id, d.name))
+            .forEach(d => {
+              const id = (d.id || '').trim().toLowerCase();
+              if (!empMap.has(id)) empMap.set(id, d);
+            });
+        }
+
+        const mergedEmps = Array.from(empMap.values()).filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
+        if (mergedEmps.length > 0) {
+          setEmployees(mergedEmps);
+          safeSetLocalStorageItem('ppnpn_employees', mergedEmps);
+        }
+
+        // Automatically back-sync any local employees to Firestore if Firestore didn't have them yet
+        if (!isSupabaseQuotaExceeded() && dbEmps.length < mergedEmps.length) {
+          for (const emp of mergedEmps) {
+            if (!dbEmps.some(d => (d.id || '').trim().toLowerCase() === (emp.id || '').trim().toLowerCase())) {
+              upsertEmployeeToSupabase(emp).catch(() => {});
+            }
           }
         }
 
@@ -358,10 +399,66 @@ export default function App() {
     const unsubEmp = subscribeToEmployeesFromSupabase((dbEmps) => {
       if (dbEmps) {
         const cleanDbEmps = dbEmps.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
-        if (cleanDbEmps.length > 0) {
-          setEmployees(cleanDbEmps);
-          safeSetLocalStorageItem('ppnpn_employees', cleanDbEmps);
-        }
+        setEmployees(prev => {
+          const empMap = new Map<string, Employee>();
+          
+          // 1. Preserve current in-memory employees
+          prev.forEach(emp => {
+            const id = (emp.id || '').trim().toLowerCase();
+            if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name)) {
+              empMap.set(id, emp);
+            }
+          });
+
+          // 2. Preserve any employees from localStorage
+          try {
+            const rawStored = localStorage.getItem('ppnpn_employees');
+            if (rawStored) {
+              const storedEmps: Employee[] = JSON.parse(rawStored);
+              storedEmps.forEach(emp => {
+                const id = (emp.id || '').trim().toLowerCase();
+                if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name) && !empMap.has(id)) {
+                  empMap.set(id, emp);
+                }
+              });
+            }
+          } catch {}
+
+          // 3. Update/merge with Firestore records intelligently
+          cleanDbEmps.forEach(emp => {
+            const id = (emp.id || '').trim().toLowerCase();
+            if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name)) {
+              const existing = empMap.get(id);
+              if (!existing) {
+                empMap.set(id, emp);
+              } else {
+                const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+                const remoteTime = emp.updatedAt ? new Date(emp.updatedAt).getTime() : 0;
+                if (remoteTime >= existingTime) {
+                  empMap.set(id, { ...existing, ...emp });
+                } else {
+                  // Keep local changes
+                  empMap.set(id, { ...emp, ...existing });
+                }
+              }
+            }
+          });
+
+          // Only if empMap is completely empty (brand new database), initialize with defaults
+          const isReset = typeof localStorage !== 'undefined' && localStorage.getItem('app_is_reset') === 'true';
+          if (!isReset && empMap.size === 0) {
+            DEFAULT_EMPLOYEES.forEach(def => {
+              const id = (def.id || '').trim().toLowerCase();
+              if (id && !isNonPpnpn(def.id, def.name) && !isEmployeeDeleted(def.id, def.name) && !empMap.has(id)) {
+                empMap.set(id, def);
+              }
+            });
+          }
+
+          const merged = Array.from(empMap.values());
+          safeSetLocalStorageItem('ppnpn_employees', merged);
+          return merged;
+        });
       }
     });
 
@@ -395,12 +492,8 @@ export default function App() {
       checkSupabaseConnection().then(connected => {
         setSupabaseConnected(connected);
         setIsQuotaExceeded(isSupabaseQuotaExceeded());
-        if (connected) {
-          loadAllData().catch(() => {});
-        }
       });
     };
-    window.addEventListener('focus', handleNetworkChange);
     window.addEventListener('online', handleNetworkChange);
 
     return () => {
@@ -410,7 +503,6 @@ export default function App() {
         if (typeof unsubDel === 'function') unsubDel();
       } catch {}
       clearInterval(interval);
-      window.removeEventListener('focus', handleNetworkChange);
       window.removeEventListener('online', handleNetworkChange);
     };
   }, [loadAllData]);
@@ -424,35 +516,6 @@ export default function App() {
       }
     }
   }, [employees]);
-
-  // One-time auto-reset of ZSA ZSA ANINDYA PUTERI tanggal 1 Juli 2026 as explicitly requested
-  useEffect(() => {
-    const performReset = async () => {
-      const match = attendance.find(
-        att => (att.employeeName?.toUpperCase().includes("ZSA ZSA") || att.employeeId === 'zaza') && 
-        att.date === '2026-07-01'
-      );
-      if (match) {
-        console.log("Found matching attendance record for ZSA ZSA on 2026-07-01. Resetting...");
-        const updated = attendance.filter(att => att.id !== match.id);
-        setAttendance(updated);
-        saveAttendance(updated);
-        
-        const isConnected = await checkSupabaseConnection();
-        if (isConnected) {
-          try {
-            await deleteAttendanceFromSupabase(match.id);
-            console.log("Successfully deleted ZSA ZSA attendance record on 2026-07-01 from Supabase.");
-          } catch (e) {
-            console.error("Failed to delete ZSA ZSA from Supabase:", e);
-          }
-        }
-      }
-    };
-    if (attendance.length > 0) {
-      performReset();
-    }
-  }, [attendance]);
 
   const handleSeedSupabase = async () => {
     const isConnected = await checkSupabaseConnection();
@@ -631,8 +694,10 @@ export default function App() {
   // Employee actions
   const handleAddEmployee = async (newEmp: Employee) => {
     const cleanId = (newEmp.id || '').trim().toLowerCase();
+    const nowIso = new Date().toISOString();
     // Unmark in case ID was previously in deleted list
     unmarkEmployeeAsDeleted(cleanId, newEmp.name);
+    unmarkEmployeeAsDeletedFromSupabase(cleanId, newEmp.name).catch(() => {});
 
     const normalizedEmp: Employee = {
       ...newEmp,
@@ -644,14 +709,20 @@ export default function App() {
       password: newEmp.password,
       cutiQuota: typeof newEmp.cutiQuota === 'number' && !isNaN(newEmp.cutiQuota) ? newEmp.cutiQuota : 12,
       shift: newEmp.role === 'security' ? 'Fleksibel' : undefined,
-      status: newEmp.status || 'aktif'
+      status: newEmp.status || 'aktif',
+      updatedAt: nowIso
     };
 
     setEmployees(prev => {
-      const exists = prev.some(e => (e.id || '').trim().toLowerCase() === cleanId);
-      const updated = exists
-        ? prev.map(e => (e.id || '').trim().toLowerCase() === cleanId ? normalizedEmp : e)
-        : [...prev, normalizedEmp];
+      const empMap = new Map<string, Employee>();
+      prev.forEach(e => {
+        const id = (e.id || '').trim().toLowerCase();
+        if (id && !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name)) {
+          empMap.set(id, e);
+        }
+      });
+      empMap.set(cleanId, normalizedEmp);
+      const updated = Array.from(empMap.values());
       saveEmployees(updated);
       safeSetLocalStorageItem('ppnpn_employees', updated);
       return updated;
@@ -659,10 +730,18 @@ export default function App() {
 
     window.dispatchEvent(new Event('storage'));
 
-    // Persist to Firebase Firestore asynchronously without freezing UI
-    upsertEmployeeToSupabase(normalizedEmp, false).catch(err => {
+    // Persist to Firebase Firestore with fast non-blocking race so UI never hangs
+    const dbPromise = upsertEmployeeToSupabase(normalizedEmp, false).catch(err => {
       console.warn("Gagal menyimpan pegawai baru ke Firebase:", err);
+      return false;
     });
+
+    await Promise.race([
+      dbPromise,
+      new Promise<boolean>(resolve => setTimeout(() => resolve(true), 800))
+    ]);
+
+    showToast(`Data pegawai "${normalizedEmp.name}" berhasil disimpan ke database!`, "success", "Tersimpan");
   };
 
   const handleDeleteEmployee = async (id: string, name?: string) => {
@@ -711,9 +790,11 @@ export default function App() {
   const handleEditEmployee = async (updatedEmp: Employee, oldId?: string) => {
     const cleanOldId = (oldId || updatedEmp.id || '').trim().toLowerCase();
     const cleanNewId = (updatedEmp.id || '').trim().toLowerCase();
+    const nowIso = new Date().toISOString();
 
     // Unmark cleanNewId in case it was in deleted list
     unmarkEmployeeAsDeleted(cleanNewId, updatedEmp.name);
+    unmarkEmployeeAsDeletedFromSupabase(cleanNewId, updatedEmp.name).catch(() => {});
 
     const normalizedEmp: Employee = {
       ...updatedEmp,
@@ -725,7 +806,8 @@ export default function App() {
       role: updatedEmp.role,
       cutiQuota: typeof updatedEmp.cutiQuota === 'number' && !isNaN(updatedEmp.cutiQuota) ? updatedEmp.cutiQuota : 12,
       shift: updatedEmp.role === 'security' ? 'Fleksibel' : undefined,
-      status: updatedEmp.status || 'aktif'
+      status: updatedEmp.status || 'aktif',
+      updatedAt: nowIso
     };
 
     // 1. Update state and local storage immediately in-place
@@ -747,10 +829,27 @@ export default function App() {
       return updated;
     });
 
-    // 2. Persist to Firebase Firestore in background without blocking UI
-    upsertEmployeeToSupabase(normalizedEmp, false).catch(err => {
+    // Update currentUser if the current logged-in employee was edited
+    if (currentUser && (currentUser.id?.toLowerCase() === cleanOldId || currentUser.id?.toLowerCase() === cleanNewId)) {
+      const updatedUser = { ...currentUser, ...normalizedEmp };
+      setCurrentUser(updatedUser);
+      safeSetLocalStorageItem('ppnpn_user', updatedUser);
+    }
+
+    window.dispatchEvent(new Event('storage'));
+
+    // 2. Persist to Firebase Firestore with fast non-blocking race so UI responds immediately
+    const dbPromise = upsertEmployeeToSupabase(normalizedEmp, false).catch(err => {
       console.warn("Notice: background employee sync to Firestore:", err);
+      return false;
     });
+
+    await Promise.race([
+      dbPromise,
+      new Promise<boolean>(resolve => setTimeout(() => resolve(true), 800))
+    ]);
+
+    showToast(`Perubahan data pegawai "${normalizedEmp.name}" berhasil disimpan ke database.`, "success", "Database Diperbarui");
 
     // 3. If ID changed (username renamed)
     if (cleanOldId && cleanOldId !== cleanNewId) {

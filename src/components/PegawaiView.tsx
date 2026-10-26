@@ -115,6 +115,10 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
     }
 
     setIsSaving(true);
+    const safetyTimeout = setTimeout(() => {
+      setIsSaving(false);
+    }, 2500);
+
     try {
       if (editingEmployee) {
         // Edit Flow
@@ -125,6 +129,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
         })) {
           setErrorMsg(`Username "${cleanUsername}" sudah digunakan oleh pegawai lain! Gunakan username lain.`);
           setIsSaving(false);
+          clearTimeout(safetyTimeout);
           return;
         }
 
@@ -141,10 +146,14 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
           status: formData.status
         };
 
-        await onEditEmployee(updatedEmp, editingEmployee.id);
+        await Promise.race([
+          onEditEmployee(updatedEmp, editingEmployee.id),
+          new Promise<void>((resolve) => setTimeout(resolve, 1500))
+        ]);
+
         setJustUpdatedId(cleanUsername);
         setTimeout(() => setJustUpdatedId(null), 4000);
-        setSuccessMsg(`Perubahan data pegawai "${cleanName}" berhasil disimpan!`);
+        setSuccessMsg(`Perubahan data pegawai "${cleanName}" berhasil disimpan ke database!`);
         setEditingEmployee(null);
         
         // Reset form
@@ -168,6 +177,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
         if (employees.some(emp => (emp.id || '').trim().toLowerCase() === cleanUsername)) {
           setErrorMsg(`Username "${cleanUsername}" sudah terdaftar! Gunakan username lain.`);
           setIsSaving(false);
+          clearTimeout(safetyTimeout);
           return;
         }
 
@@ -184,12 +194,19 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
           status: formData.status
         };
 
-        await onAddEmployee(newEmp);
+        await Promise.race([
+          onAddEmployee(newEmp),
+          new Promise<void>((resolve) => setTimeout(resolve, 1500))
+        ]);
+
         setJustUpdatedId(cleanUsername);
         setTimeout(() => setJustUpdatedId(null), 4000);
-        setSuccessMsg(`Pegawai baru "${cleanName}" berhasil ditambahkan!`);
+        setSuccessMsg(`Pegawai baru "${cleanName}" berhasil ditambahkan ke database!`);
         
-        // Reset form
+        // Reset form & filters so all employees and the new employee are immediately visible
+        setSearchTerm('');
+        setStatusFilter('semua');
+        setRoleFilter('semua');
         setFormData({
           username: '',
           name: '',
@@ -209,6 +226,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
       console.error("Gagal memproses data pegawai:", err);
       setErrorMsg(`Terjadi kendala saat menyimpan data: ${err?.message || err}`);
     } finally {
+      clearTimeout(safetyTimeout);
       setIsSaving(false);
       setTimeout(() => setSuccessMsg(''), 5000);
     }

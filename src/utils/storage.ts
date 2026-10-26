@@ -87,7 +87,12 @@ export const unmarkEmployeeAsDeleted = (id: string, name?: string) => {
     const deleted = getDeletedEmployeeIds();
     const cleanId = (id || '').trim().toLowerCase();
     const cleanName = (name || '').trim().toLowerCase();
-    const filtered = deleted.filter(item => item !== cleanId && item !== `name:${cleanName}`);
+    const filtered = deleted.filter(item => {
+      const itemLower = item.toLowerCase();
+      if (cleanId && itemLower === cleanId) return false;
+      if (cleanName && (itemLower === `name:${cleanName}` || itemLower === cleanName)) return false;
+      return true;
+    });
     localStorage.setItem(DELETED_EMPLOYEES_KEY, JSON.stringify(filtered));
   } catch (err) {
     console.warn("Failed to unmark employee as deleted in storage:", err);
@@ -96,7 +101,7 @@ export const unmarkEmployeeAsDeleted = (id: string, name?: string) => {
 
 export const isEmployeeDeleted = (id?: string | null, name?: string | null): boolean => {
   const deleted = getDeletedEmployeeIds();
-  if (deleted.length === 0) return false;
+  if (!deleted || deleted.length === 0) return false;
   const cleanId = (id || '').trim().toLowerCase();
   const cleanName = (name || '').trim().toLowerCase();
   if (cleanId && deleted.includes(cleanId)) return true;
@@ -104,8 +109,8 @@ export const isEmployeeDeleted = (id?: string | null, name?: string | null): boo
     if (deleted.includes(`name:${cleanName}`)) return true;
     for (const item of deleted) {
       if (item.startsWith('name:')) {
-        const delName = item.slice(5).trim();
-        if (delName && (delName === cleanName || cleanName.includes(delName) || delName.includes(cleanName))) {
+        const delName = item.slice(5).trim().toLowerCase();
+        if (delName && delName.length > 1 && delName === cleanName) {
           return true;
         }
       }
@@ -674,6 +679,14 @@ export const getStoredData = () => {
   let parsedEmployees = JSON.parse(employees) as Employee[];
   // Dynamic filter out of non-PPNPN and deleted employees
   parsedEmployees = parsedEmployees.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name) && e.id !== 'robert' && e.id !== 'lucas');
+
+  // Only if parsedEmployees is completely empty (first run), initialize with defaults
+  if (!isReset && parsedEmployees.length === 0) {
+    parsedEmployees = DEFAULT_EMPLOYEES.filter(d => 
+      !isNonPpnpn(d.id, d.name) && 
+      !isEmployeeDeleted(d.id, d.name)
+    );
+  }
 
   // Assign specific roles and default status of 'aktif' to any employee without status
   parsedEmployees = parsedEmployees.map(e => {

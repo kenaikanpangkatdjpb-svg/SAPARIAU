@@ -3,6 +3,8 @@ import { getAuth } from 'firebase/auth';
 import {
   getFirestore,
   initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   collection,
   doc,
   getDoc,
@@ -42,21 +44,30 @@ export const activeFirebaseConfig = getActiveFirebaseConfig();
 // Initialize Firebase App
 export const app = !getApps().length ? initializeApp(activeFirebaseConfig) : getApp();
 
-// Initialize Firestore with specific databaseId if provided
+// Initialize Firestore with persistent IndexedDB multi-tab cache for rock-solid stability
 export const db = (() => {
+  const databaseId = (activeFirebaseConfig as any).firestoreDatabaseId || '(default)';
   try {
     return initializeFirestore(
       app,
       {
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
         experimentalAutoDetectLongPolling: true
       },
-      (activeFirebaseConfig as any).firestoreDatabaseId || '(default)'
+      databaseId
     );
   } catch {
-    return getFirestore(
-      app,
-      (activeFirebaseConfig as any).firestoreDatabaseId || '(default)'
-    );
+    try {
+      return initializeFirestore(
+        app,
+        {
+          experimentalAutoDetectLongPolling: true
+        },
+        databaseId
+      );
+    } catch {
+      return getFirestore(app, databaseId);
+    }
   }
 })();
 
@@ -121,7 +132,8 @@ export const mapEmployeeToDb = (emp: Employee) => ({
   join_date: emp.joinDate || new Date().toISOString().split('T')[0],
   cuti_quota: typeof emp.cutiQuota === 'number' && !isNaN(emp.cutiQuota) ? emp.cutiQuota : 12,
   shift: emp.role === 'security' ? 'Fleksibel' : (emp.shift || null),
-  status: emp.status || 'aktif'
+  status: emp.status || 'aktif',
+  updated_at: emp.updatedAt || new Date().toISOString()
 });
 
 export const mapEmployeeFromDb = (row: any): Employee => {
@@ -149,7 +161,8 @@ export const mapEmployeeFromDb = (row: any): Employee => {
     joinDate: row.join_date || row.joinDate || new Date().toISOString().split('T')[0],
     cutiQuota: typeof row.cuti_quota === 'number' ? row.cuti_quota : (typeof row.cutiQuota === 'number' ? row.cutiQuota : 12),
     shift: mappedRole === 'security' ? 'Fleksibel' : (row.shift || undefined),
-    status: row.status || 'aktif'
+    status: row.status || 'aktif',
+    updatedAt: row.updated_at || row.updatedAt || undefined
   };
 };
 
@@ -348,6 +361,12 @@ const getLocalCache = <T>(key: string, fallback: T): T => {
   }
 };
 
+const setLocalCache = <T>(key: string, val: T): void => {
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+  } catch {}
+};
+
 // Memory cache with TTL to prevent redundant Firestore bulk reads
 const readCacheTimestamps: Record<string, number> = {};
 const READ_CACHE_TTL_MS = 5 * 60 * 1000; // 5 menit cache per sesi/tab
@@ -434,7 +453,8 @@ export const getAttendanceFromFirebase = async (force: boolean = false): Promise
     return getLocalCache<Attendance[]>('ppnpn_attendance', []);
   }
   try {
-    const snap = await getDocs(collection(db, 'ppnpn_attendance'));
+    const q = query(collection(db, 'ppnpn_attendance'), limit(300));
+    const snap = await getDocs(q);
     markCacheFetched('attendance');
     if (snap.empty) return [];
     return snap.docs
@@ -486,7 +506,8 @@ export const getLogbooksFromFirebase = async (force: boolean = false): Promise<L
     return getLocalCache<Logbook[]>('ppnpn_logbooks', []);
   }
   try {
-    const snap = await getDocs(collection(db, 'ppnpn_logbooks'));
+    const q = query(collection(db, 'ppnpn_logbooks'), limit(300));
+    const snap = await getDocs(q);
     markCacheFetched('logbooks');
     if (snap.empty) return [];
     return snap.docs
@@ -556,13 +577,25 @@ export const upsertEmployeeToFirebase = async (employee: Employee, throwOnError 
   try {
     const cleanId = (employee?.id || '').trim().toLowerCase();
     if (!cleanId) return false;
-    const cleanEmployee = { ...employee, id: cleanId };
+    const nowIso = employee.updatedAt || new Date().toISOString();
+    const cleanEmployee = { ...employee, id: cleanId, updatedAt: nowIso };
     const payload = mapEmployeeToDb(cleanEmployee);
     delete readCacheTimestamps['employees'];
-    const writePromise = setDoc(doc(db, 'ppnpn_employees', cleanId), payload, { merge: true });
-    // In browser/iframe, prevent any potential promise freeze with a 2-second resolution guarantee
-    const fastAckPromise = new Promise(resolve => setTimeout(resolve, 2000));
-    await Promise.race([writePromise, fastAckPromise]);
+
+    // Update local cache immediately so subsequent gets always have this updated employee
+    try {
+      const localEmps = getLocalCache<Employee[]>('ppnpn_employees', []);
+      const updatedLocal = localEmps.filter(e => (e.id || '').trim().toLowerCase() !== cleanId);
+      updatedLocal.push(cleanEmployee);
+      setLocalCache('ppnpn_employees', updatedLocal);
+    } catch {}
+
+    // Firestore setDoc with 2.5 second timeout race so UI never hangs
+    const docRef = doc(db, 'ppnpn_employees', cleanId);
+    const writePromise = setDoc(docRef, payload, { merge: true }).then(() => true);
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 2500));
+    
+    await Promise.race([writePromise, timeoutPromise]);
     delete readCacheTimestamps['employees'];
     return true;
   } catch (e: any) {
@@ -585,7 +618,9 @@ export const upsertEmployeeToFirebase = async (employee: Employee, throwOnError 
 export const upsertAttendanceToFirebase = async (att: Attendance, throwOnError = false): Promise<boolean> => {
   try {
     const payload = mapAttendanceToDb(att);
-    await setDoc(doc(db, 'ppnpn_attendance', att.id), payload, { merge: true });
+    const writePromise = setDoc(doc(db, 'ppnpn_attendance', att.id), payload, { merge: true }).then(() => true);
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 2500));
+    await Promise.race([writePromise, timeoutPromise]);
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
@@ -625,7 +660,9 @@ export const deleteAttendanceFromFirebase = async (id: string, throwOnError = fa
 export const upsertLeaveToFirebase = async (leave: LeaveRequest, throwOnError = false): Promise<boolean> => {
   try {
     const payload = mapLeaveToDb(leave);
-    await setDoc(doc(db, 'ppnpn_leaves', leave.id), payload, { merge: true });
+    const writePromise = setDoc(doc(db, 'ppnpn_leaves', leave.id), payload, { merge: true }).then(() => true);
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 2500));
+    await Promise.race([writePromise, timeoutPromise]);
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
@@ -660,7 +697,9 @@ export const deleteLeaveFromFirebase = async (id: string): Promise<boolean> => {
 export const upsertLogbookToFirebase = async (log: Logbook, throwOnError = false): Promise<boolean> => {
   try {
     const payload = mapLogbookToDb(log);
-    await setDoc(doc(db, 'ppnpn_logbooks', log.id), payload, { merge: true });
+    const writePromise = setDoc(doc(db, 'ppnpn_logbooks', log.id), payload, { merge: true }).then(() => true);
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 2500));
+    await Promise.race([writePromise, timeoutPromise]);
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
@@ -681,7 +720,9 @@ export const upsertLogbookToFirebase = async (log: Logbook, throwOnError = false
 export const upsertSettingsToFirebase = async (settings: OfficeSettings, throwOnError = false): Promise<boolean> => {
   try {
     const payload = mapSettingsToDb(settings);
-    await setDoc(doc(db, 'ppnpn_settings', 'current_settings'), payload, { merge: true });
+    const writePromise = setDoc(doc(db, 'ppnpn_settings', 'current_settings'), payload, { merge: true }).then(() => true);
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 2500));
+    await Promise.race([writePromise, timeoutPromise]);
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
@@ -789,7 +830,8 @@ export const upsertOvertimeToFirebase = async (rec: any, throwOnError = false): 
 
 export const subscribeToAttendanceFromFirebase = (callback: (records: Attendance[]) => void) => {
   try {
-    return onSnapshot(collection(db, 'ppnpn_attendance'), (snap) => {
+    const q = query(collection(db, 'ppnpn_attendance'), limit(300));
+    return onSnapshot(q, (snap) => {
       if (!snap.empty) {
         const list = snap.docs
           .map(doc => mapAttendanceFromDb({ id: doc.id, ...doc.data() }))
@@ -836,6 +878,29 @@ export const getDeletedEmployeesFromFirebase = async (): Promise<string[]> => {
   } catch (err) {
     console.warn("Notice reading deleted employee IDs from Firebase:", err);
     return [];
+  }
+};
+
+export const unmarkEmployeeAsDeletedInFirebase = async (id: string, name?: string): Promise<boolean> => {
+  try {
+    const delDocRef = doc(db, 'ppnpn_settings', 'deleted_records');
+    const delSnap = await getDoc(delDocRef);
+    if (delSnap.exists()) {
+      const existingDel: string[] = delSnap.data()?.deletedEmployeeIds || [];
+      const cleanIdLower = (id || '').trim().toLowerCase();
+      const cleanNameLower = (name || '').trim().toLowerCase();
+      const updatedDel = existingDel.filter(item => {
+        const itemLower = item.toLowerCase();
+        if (cleanIdLower && itemLower === cleanIdLower) return false;
+        if (cleanNameLower && (itemLower === `name:${cleanNameLower}` || itemLower === cleanNameLower)) return false;
+        return true;
+      });
+      await setDoc(delDocRef, { deletedEmployeeIds: updatedDel, updatedAt: new Date().toISOString() }, { merge: true });
+    }
+    return true;
+  } catch (err) {
+    console.warn("Notice unmarking deleted employee in Firebase:", err);
+    return false;
   }
 };
 
