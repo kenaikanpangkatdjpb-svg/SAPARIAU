@@ -15,7 +15,9 @@ import {
   onSnapshot,
   query,
   where,
-  limit
+  limit,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from '../types';
 import { isNonPpnpn, NON_PPNPN_IDS, isEmployeeDeleted, markEmployeeAsDeleted } from './storage';
@@ -480,7 +482,8 @@ export const getLeavesFromFirebase = async (force: boolean = false): Promise<Lea
     return getLocalCache<LeaveRequest[]>('ppnpn_leaves', []);
   }
   try {
-    const snap = await getDocs(collection(db, 'ppnpn_leaves'));
+    const q = query(collection(db, 'ppnpn_leaves'), limit(200));
+    const snap = await getDocs(q);
     markCacheFetched('leaves');
     if (snap.empty) return [];
     return snap.docs
@@ -557,7 +560,8 @@ export const getOvertimeFromFirebase = async (force: boolean = false): Promise<a
     return getLocalCache<any[]>('overtime_attendance_records', []);
   }
   try {
-    const snap = await getDocs(collection(db, 'ppnpn_overtime_records'));
+    const q = query(collection(db, 'ppnpn_overtime_records'), limit(200));
+    const snap = await getDocs(q);
     markCacheFetched('overtime');
     if (snap.empty) return [];
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -743,58 +747,65 @@ export const deleteEmployeeFromFirebase = async (id: string, name?: string): Pro
   try {
     delete readCacheTimestamps['employees'];
     const cleanId = (id || '').trim();
+    if (!cleanId) return false;
     const cleanIdLower = cleanId.toLowerCase();
-    const cleanNameLower = (name || '').trim().toLowerCase();
 
     // Mark as deleted in storage immediately
     markEmployeeAsDeleted(cleanId, name);
+    if (cleanIdLower !== cleanId) {
+      markEmployeeAsDeleted(cleanIdLower, name);
+    }
 
     // 1. Direct delete attempts by exact and lower ID
     try {
       await deleteDoc(doc(db, 'ppnpn_employees', cleanId));
-    } catch {}
+    } catch (e: any) {
+      if (isQuotaError(e)) {
+        setFirebaseQuotaExceeded(true);
+        return true;
+      }
+    }
     if (cleanIdLower !== cleanId) {
       try {
         await deleteDoc(doc(db, 'ppnpn_employees', cleanIdLower));
-      } catch {}
+      } catch (e: any) {
+        if (isQuotaError(e)) {
+          setFirebaseQuotaExceeded(true);
+          return true;
+        }
+      }
     }
 
-    // 2. Query and batch delete all documents matching ID or Name in collection
+    // 2. Targeted query ONLY for legacy documents where Firestore auto-generated document ID was used but 'id' matches
+    // Strictly does not scan the whole collection and does not delete by name alone
     try {
-      const snap = await getDocs(collection(db, 'ppnpn_employees'));
-      const batch = writeBatch(db);
-      let count = 0;
-      snap.docs.forEach(d => {
-        const data = d.data();
-        const dId = (d.id || '').toLowerCase();
-        const dataId = (data.id || '').toString().toLowerCase();
-        const dataName = (data.name || '').toString().toLowerCase();
-
-        if (
-          dId === cleanIdLower ||
-          dataId === cleanIdLower ||
-          (cleanNameLower && dataName === cleanNameLower)
-        ) {
-          batch.delete(d.ref);
-          count++;
-        }
-      });
-      if (count > 0) {
+      const q = query(collection(db, 'ppnpn_employees'), where('id', '==', cleanId), limit(5));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const batch = writeBatch(db);
+        snap.docs.forEach(d => batch.delete(d.ref));
         await batch.commit();
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setFirebaseQuotaExceeded(true);
+        return true;
+      }
       console.warn("Notice during employee query deletion in Firebase:", err);
     }
 
-    // 3. Record in Firestore 'ppnpn_settings/deleted_records'
+    // 3. Record in Firestore 'ppnpn_settings/deleted_records' using atomic arrayUnion (no getDoc needed!)
     try {
       const delDocRef = doc(db, 'ppnpn_settings', 'deleted_records');
-      const delSnap = await getDoc(delDocRef);
-      const existingDel: string[] = delSnap.exists() ? (delSnap.data()?.deletedEmployeeIds || []) : [];
-      const updatedDel = Array.from(new Set([...existingDel, cleanIdLower, cleanId]));
-      if (cleanNameLower) updatedDel.push(`name:${cleanNameLower}`);
-      await setDoc(delDocRef, { deletedEmployeeIds: updatedDel, updatedAt: new Date().toISOString() }, { merge: true });
-    } catch (err) {
+      await setDoc(delDocRef, {
+        deletedEmployeeIds: arrayUnion(cleanIdLower, cleanId),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        setFirebaseQuotaExceeded(true);
+        return true;
+      }
       console.warn("Notice saving deleted record to Firebase:", err);
     }
 
@@ -828,41 +839,72 @@ export const upsertOvertimeToFirebase = async (rec: any, throwOnError = false): 
   }
 };
 
-export const subscribeToAttendanceFromFirebase = (callback: (records: Attendance[]) => void) => {
+export const subscribeToAttendanceFromFirebase = (
+  callback: (records: Attendance[], isFromCache: boolean) => void,
+  onError?: (err: any) => void
+) => {
   try {
     const q = query(collection(db, 'ppnpn_attendance'), limit(300));
     return onSnapshot(q, (snap) => {
+      const isFromCache = snap.metadata.fromCache;
       if (!snap.empty) {
         const list = snap.docs
           .map(doc => mapAttendanceFromDb({ id: doc.id, ...doc.data() }))
           .filter(att => !isNonPpnpn(att.employeeId, att.employeeName));
-        callback(list);
+        setLocalCache('ppnpn_attendance', list);
+        markCacheFetched('attendance');
+        callback(list, isFromCache);
+      } else {
+        callback([], isFromCache);
       }
     }, (error) => {
       console.warn("[Firebase] onSnapshot attendance error:", error?.message || error);
+      if (isQuotaError(error)) {
+        setFirebaseQuotaExceeded(true);
+      }
+      if (onError) onError(error);
     });
   } catch (err) {
     console.warn("[Firebase] subscribeToAttendanceFromFirebase caught error:", err);
+    if (isQuotaError(err)) {
+      setFirebaseQuotaExceeded(true);
+    }
+    if (onError) onError(err);
     return () => {};
   }
 };
 
-export const subscribeToEmployeesFromFirebase = (callback: (emps: Employee[]) => void) => {
+export const subscribeToEmployeesFromFirebase = (
+  callback: (emps: Employee[], isFromCache: boolean) => void,
+  onError?: (err: any) => void
+) => {
   try {
     return onSnapshot(collection(db, 'ppnpn_employees'), (snap) => {
+      const isFromCache = snap.metadata.fromCache;
       if (snap.empty) {
-        callback([]);
+        callback([], isFromCache);
         return;
       }
       const list = snap.docs
         .map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }))
         .filter(emp => !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name));
-      callback(list);
+      
+      setLocalCache('ppnpn_employees', list);
+      markCacheFetched('employees');
+      callback(list, isFromCache);
     }, (error) => {
       console.warn("[Firebase] onSnapshot employees error:", error?.message || error);
+      if (isQuotaError(error)) {
+        setFirebaseQuotaExceeded(true);
+      }
+      if (onError) onError(error);
     });
   } catch (err) {
     console.warn("[Firebase] subscribeToEmployeesFromFirebase caught error:", err);
+    if (isQuotaError(err)) {
+      setFirebaseQuotaExceeded(true);
+    }
+    if (onError) onError(err);
     return () => {};
   }
 };
@@ -883,20 +925,16 @@ export const getDeletedEmployeesFromFirebase = async (): Promise<string[]> => {
 
 export const unmarkEmployeeAsDeletedInFirebase = async (id: string, name?: string): Promise<boolean> => {
   try {
+    const cleanId = (id || '').trim();
+    if (!cleanId) return false;
+    const cleanIdLower = cleanId.toLowerCase();
     const delDocRef = doc(db, 'ppnpn_settings', 'deleted_records');
-    const delSnap = await getDoc(delDocRef);
-    if (delSnap.exists()) {
-      const existingDel: string[] = delSnap.data()?.deletedEmployeeIds || [];
-      const cleanIdLower = (id || '').trim().toLowerCase();
-      const cleanNameLower = (name || '').trim().toLowerCase();
-      const updatedDel = existingDel.filter(item => {
-        const itemLower = item.toLowerCase();
-        if (cleanIdLower && itemLower === cleanIdLower) return false;
-        if (cleanNameLower && (itemLower === `name:${cleanNameLower}` || itemLower === cleanNameLower)) return false;
-        return true;
-      });
-      await setDoc(delDocRef, { deletedEmployeeIds: updatedDel, updatedAt: new Date().toISOString() }, { merge: true });
-    }
+    
+    // Atomically remove without getDoc
+    await setDoc(delDocRef, {
+      deletedEmployeeIds: arrayRemove(cleanId, cleanIdLower),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
     return true;
   } catch (err) {
     console.warn("Notice unmarking deleted employee in Firebase:", err);
@@ -904,18 +942,33 @@ export const unmarkEmployeeAsDeletedInFirebase = async (id: string, name?: strin
   }
 };
 
-export const subscribeToDeletedEmployeesFromFirebase = (callback: (deletedIds: string[]) => void) => {
+export const subscribeToDeletedEmployeesFromFirebase = (
+  callback: (deletedIds: string[], isFromCache: boolean) => void,
+  onError?: (err: any) => void
+) => {
   try {
     return onSnapshot(doc(db, 'ppnpn_settings', 'deleted_records'), (snap) => {
+      const isFromCache = snap.metadata.fromCache;
       if (snap.exists()) {
         const ids: string[] = snap.data()?.deletedEmployeeIds || [];
-        callback(ids);
+        callback(ids, isFromCache);
+      } else {
+        // Dokumen yang belum ada menghasilkan daftar kosong
+        callback([], isFromCache);
       }
     }, (error) => {
       console.warn("[Firebase] onSnapshot deleted_records error:", error?.message || error);
+      if (isQuotaError(error)) {
+        setFirebaseQuotaExceeded(true);
+      }
+      if (onError) onError(error);
     });
   } catch (err) {
     console.warn("[Firebase] subscribeToDeletedEmployeesFromFirebase caught error:", err);
+    if (isQuotaError(err)) {
+      setFirebaseQuotaExceeded(true);
+    }
+    if (onError) onError(err);
     return () => {};
   }
 };
@@ -1030,7 +1083,7 @@ export const resetAllEmployeeQuotasInFirebase = async (quota: number = 12): Prom
 export const purgeNonPpnpnFromFirebase = async (): Promise<boolean> => {
   if (quotaExceededState) return true;
   try {
-    // 1. Delete by IDs from ppnpn_employees
+    // Delete specifically by known non-PPNPN IDs without scanning entire collections
     for (const id of NON_PPNPN_IDS) {
       try {
         await deleteDoc(doc(db, 'ppnpn_employees', id));
@@ -1041,51 +1094,6 @@ export const purgeNonPpnpnFromFirebase = async (): Promise<boolean> => {
         }
       }
     }
-
-    // 2. Query and delete any employees with matching names
-    try {
-      const snap = await getDocs(collection(db, 'ppnpn_employees'));
-      const batch = writeBatch(db);
-      let count = 0;
-      snap.docs.forEach(d => {
-        const data = d.data();
-        if (isNonPpnpn(d.id, data.name)) {
-          batch.delete(d.ref);
-          count++;
-        }
-      });
-      if (count > 0) {
-        await batch.commit();
-      }
-    } catch (err: any) {
-      if (isQuotaError(err)) {
-        setFirebaseQuotaExceeded(true);
-        return true;
-      }
-    }
-
-    // 3. Delete attendance for non-PPNPN
-    try {
-      const snap = await getDocs(collection(db, 'ppnpn_attendance'));
-      const batch = writeBatch(db);
-      let count = 0;
-      snap.docs.forEach(d => {
-        const data = d.data();
-        if (isNonPpnpn(data.employee_id, data.employee_name) || isNonPpnpn(d.id, '')) {
-          batch.delete(d.ref);
-          count++;
-        }
-      });
-      if (count > 0) {
-        await batch.commit();
-      }
-    } catch (err: any) {
-      if (isQuotaError(err)) {
-        setFirebaseQuotaExceeded(true);
-        return true;
-      }
-    }
-
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
