@@ -13,6 +13,7 @@ import {
   isEmployeeDeleted,
   unmarkEmployeeAsDeleted,
   mergeDeletedEmployeeIds,
+  setDeletedEmployeeIds,
   DEFAULT_EMPLOYEES
 } from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
@@ -98,6 +99,7 @@ export default function App() {
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [logbooks, setLogbooks] = useState<Logbook[]>([]);
   const [settings, setSettings] = useState<OfficeSettings>({} as OfficeSettings);
+  const rawRemoteEmployeesRef = useRef<Employee[] | null>(null);
 
   // Auth & View state
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
@@ -161,9 +163,6 @@ export default function App() {
 
     setIsSyncingSupabase(true);
     try {
-      // Background purge for known invalid IDs only (no bulk collection scans)
-      purgeNonPpnpnFromSupabase().catch(() => {});
-
       // Sync non-subscribed modules: Leaves, Logbooks, Settings, Overtime
       // Note: Employees, Deleted Records, and Attendance are handled entirely by live onSnapshot listeners
       const rawDbLeaves = await getLeavesFromSupabase();
@@ -236,12 +235,25 @@ export default function App() {
     const unsubDel = subscribeToDeletedEmployeesFromSupabase((deletedIds, isFromCache) => {
       if (isFromCache !== undefined) setIsDataFromCache(isFromCache);
       setSupabaseConnected(!isSupabaseQuotaExceeded());
-      if (deletedIds && deletedIds.length > 0) {
-        mergeDeletedEmployeeIds(deletedIds);
-      }
-      // Immediately filter current employees state without re-fetching any collection
+      setDeletedEmployeeIds(deletedIds || []);
+
+      // Immediately filter current employees state (or latest remote snapshot) without re-fetching any collection
       setEmployees(prev => {
-        const filtered = prev.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
+        const sourceList = rawRemoteEmployeesRef.current && rawRemoteEmployeesRef.current.length > 0
+          ? rawRemoteEmployeesRef.current
+          : prev;
+        const empMap = new Map<string, Employee>();
+        const defaultNauval = DEFAULT_EMPLOYEES.find(d => d.id === 'nauval');
+        if (defaultNauval) {
+          empMap.set('nauval', defaultNauval);
+        }
+        sourceList.forEach(emp => {
+          const id = (emp.id || '').trim().toLowerCase();
+          if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name)) {
+            empMap.set(id, emp);
+          }
+        });
+        const filtered = Array.from(empMap.values());
         safeSetLocalStorageItem('ppnpn_employees', filtered);
         return filtered;
       });
@@ -259,40 +271,28 @@ export default function App() {
       setIsQuotaExceeded(false);
 
       if (dbEmps) {
+        rawRemoteEmployeesRef.current = dbEmps;
         const cleanDbEmps = dbEmps.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name));
-        setEmployees(prev => {
+        setEmployees(() => {
           const empMap = new Map<string, Employee>();
-          
-          // Preserve current in-memory / local employees
-          prev.forEach(emp => {
+
+          // Ensure default Admin Nauval (username: nauval) is always available alongside Firestore records
+          const defaultNauval = DEFAULT_EMPLOYEES.find(d => d.id === 'nauval');
+          if (defaultNauval) {
+            empMap.set('nauval', defaultNauval);
+          }
+
+          // Use Firestore records as the authoritative source of truth (matching sapariau.vercel.app)
+          cleanDbEmps.forEach(emp => {
             const id = (emp.id || '').trim().toLowerCase();
             if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name)) {
               empMap.set(id, emp);
             }
           });
 
-          // Overlay with Firestore records intelligently
-          cleanDbEmps.forEach(emp => {
-            const id = (emp.id || '').trim().toLowerCase();
-            if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name)) {
-              const existing = empMap.get(id);
-              if (!existing) {
-                empMap.set(id, emp);
-              } else {
-                const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-                const remoteTime = emp.updatedAt ? new Date(emp.updatedAt).getTime() : 0;
-                if (remoteTime >= existingTime) {
-                  empMap.set(id, { ...existing, ...emp });
-                } else {
-                  empMap.set(id, { ...emp, ...existing });
-                }
-              }
-            }
-          });
-
           // Default fallback only if completely empty on fresh install
           const isReset = typeof localStorage !== 'undefined' && localStorage.getItem('app_is_reset') === 'true';
-          if (!isReset && empMap.size === 0) {
+          if (!isReset && empMap.size <= 1) {
             DEFAULT_EMPLOYEES.forEach(def => {
               const id = (def.id || '').trim().toLowerCase();
               if (id && !isNonPpnpn(def.id, def.name) && !isEmployeeDeleted(def.id, def.name) && !empMap.has(id)) {
@@ -564,6 +564,7 @@ export default function App() {
       });
       empMap.set(cleanId, normalizedEmp);
       const updated = Array.from(empMap.values());
+      rawRemoteEmployeesRef.current = updated;
       saveEmployees(updated);
       safeSetLocalStorageItem('ppnpn_employees', updated);
       return updated;
@@ -613,6 +614,7 @@ export default function App() {
         const matchName = empName && e.name && e.name.trim().toLowerCase() === empName.trim().toLowerCase();
         return !matchId && !matchName && !isEmployeeDeleted(e.id, e.name);
       });
+      rawRemoteEmployeesRef.current = updated;
       saveEmployees(updated);
       safeSetLocalStorageItem('ppnpn_employees', updated);
       return updated;
@@ -665,6 +667,7 @@ export default function App() {
       } else {
         updated = [...prev.filter(e => (e.id || '').trim().toLowerCase() !== cleanNewId), normalizedEmp];
       }
+      rawRemoteEmployeesRef.current = updated;
       saveEmployees(updated);
       safeSetLocalStorageItem('ppnpn_employees', updated);
       return updated;

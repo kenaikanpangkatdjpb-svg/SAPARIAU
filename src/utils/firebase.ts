@@ -128,7 +128,7 @@ export const mapEmployeeToDb = (emp: Employee) => ({
   name: emp.name || '',
   email: emp.email || `${emp.id}@ppnpn.com`,
   role: emp.role || 'pramubakti',
-  password: emp.password || 'password123',
+  password: emp.password || '123',
   position: emp.position || '',
   photo_url: emp.photoUrl || null,
   join_date: emp.joinDate || new Date().toISOString().split('T')[0],
@@ -157,7 +157,7 @@ export const mapEmployeeFromDb = (row: any): Employee => {
     name: row.name || 'Pegawai',
     email: row.email || `${row.id || 'user'}@ppnpn.com`,
     role: (mappedRole as any) || 'pramubakti',
-    password: row.password || 'password123',
+    password: !row.password || row.password === 'password123' ? '123' : String(row.password),
     position: row.position || (mappedRole === 'security' ? 'Security' : mappedRole === 'sopir' ? 'Pengemudi / Sopir' : 'Pramubakti'),
     photoUrl: row.photo_url || row.photoUrl || undefined,
     joinDate: row.join_date || row.joinDate || new Date().toISOString().split('T')[0],
@@ -321,24 +321,22 @@ export const isQuotaError = (err: any): boolean => {
 };
 
 const QUOTA_STORAGE_KEY = `firebase_quota_exceeded_${(activeFirebaseConfig as any).projectId || 'default'}`;
-const getTodayStr = () => new Date().toISOString().slice(0, 10);
-
-// Clear any old obsolete global key from previous projects
-try {
-  localStorage.removeItem('firebase_firestore_quota_exceeded_date');
-} catch {}
-
-const checkQuotaStateFromStorage = (): boolean => {
+const getTodayStr = () => {
   try {
-    const saved = localStorage.getItem(QUOTA_STORAGE_KEY);
-    return saved === getTodayStr();
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
   } catch {
-    return false;
+    return new Date().toISOString().slice(0, 10);
   }
 };
 
+// Clear any old or stuck quota flags on startup so live Firestore connection is always attempted first
+try {
+  localStorage.removeItem('firebase_firestore_quota_exceeded_date');
+  localStorage.removeItem(QUOTA_STORAGE_KEY);
+} catch {}
+
 let lastFirebaseError: string | null = null;
-let quotaExceededState = checkQuotaStateFromStorage();
+let quotaExceededState = false;
 
 export const isFirebaseQuotaExceeded = (): boolean => quotaExceededState;
 export const setFirebaseQuotaExceeded = (val: boolean) => {
@@ -847,6 +845,9 @@ export const subscribeToAttendanceFromFirebase = (
     const q = query(collection(db, 'ppnpn_attendance'), limit(300));
     return onSnapshot(q, (snap) => {
       const isFromCache = snap.metadata.fromCache;
+      if (!isFromCache) {
+        setFirebaseQuotaExceeded(false);
+      }
       if (!snap.empty) {
         const list = snap.docs
           .map(doc => mapAttendanceFromDb({ id: doc.id, ...doc.data() }))
@@ -881,17 +882,21 @@ export const subscribeToEmployeesFromFirebase = (
   try {
     return onSnapshot(collection(db, 'ppnpn_employees'), (snap) => {
       const isFromCache = snap.metadata.fromCache;
+      if (!isFromCache) {
+        setFirebaseQuotaExceeded(false);
+      }
       if (snap.empty) {
         callback([], isFromCache);
         return;
       }
-      const list = snap.docs
+      const rawList = snap.docs
         .map(doc => mapEmployeeFromDb({ id: doc.id, ...doc.data() }))
-        .filter(emp => !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name));
+        .filter(emp => !isNonPpnpn(emp.id, emp.name));
+      const filteredList = rawList.filter(emp => !isEmployeeDeleted(emp.id, emp.name));
       
-      setLocalCache('ppnpn_employees', list);
+      setLocalCache('ppnpn_employees', filteredList);
       markCacheFetched('employees');
-      callback(list, isFromCache);
+      callback(rawList, isFromCache);
     }, (error) => {
       console.warn("[Firebase] onSnapshot employees error:", error?.message || error);
       if (isQuotaError(error)) {
@@ -928,11 +933,16 @@ export const unmarkEmployeeAsDeletedInFirebase = async (id: string, name?: strin
     const cleanId = (id || '').trim();
     if (!cleanId) return false;
     const cleanIdLower = cleanId.toLowerCase();
+    const cleanNameLower = (name || '').trim().toLowerCase();
     const delDocRef = doc(db, 'ppnpn_settings', 'deleted_records');
+    const toRemove = [cleanId, cleanIdLower];
+    if (cleanNameLower) {
+      toRemove.push(`name:${cleanNameLower}`, cleanNameLower);
+    }
     
     // Atomically remove without getDoc
     await setDoc(delDocRef, {
-      deletedEmployeeIds: arrayRemove(cleanId, cleanIdLower),
+      deletedEmployeeIds: arrayRemove(...toRemove),
       updatedAt: new Date().toISOString()
     }, { merge: true });
     return true;
@@ -949,6 +959,9 @@ export const subscribeToDeletedEmployeesFromFirebase = (
   try {
     return onSnapshot(doc(db, 'ppnpn_settings', 'deleted_records'), (snap) => {
       const isFromCache = snap.metadata.fromCache;
+      if (!isFromCache) {
+        setFirebaseQuotaExceeded(false);
+      }
       if (snap.exists()) {
         const ids: string[] = snap.data()?.deletedEmployeeIds || [];
         callback(ids, isFromCache);

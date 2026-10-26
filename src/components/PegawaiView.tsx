@@ -34,7 +34,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
     username: '',
     name: '',
     position: '',
-    password: '',
+    password: '123',
     role: 'pramubakti' as Role,
     cutiQuota: 12,
     shift: '' as 'pagi' | 'malam' | '',
@@ -107,7 +107,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
     const cleanUsername = (formData.username || '').trim().toLowerCase();
     const cleanName = (formData.name || '').trim();
     const cleanPosition = (formData.position || (formData.role === 'security' ? 'Security / Petugas Keamanan' : formData.role === 'sopir' ? 'Pengemudi / Sopir' : formData.role === 'admin' ? 'Administrator' : 'Pramubakti')).trim();
-    const cleanPassword = (formData.password || 'password123').trim();
+    const cleanPassword = (formData.password || '123').trim();
 
     if (!cleanUsername || !cleanName) {
       setErrorMsg("Username dan Nama Lengkap wajib diisi!");
@@ -161,7 +161,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
           username: '',
           name: '',
           position: '',
-          password: '',
+          password: '123',
           role: 'pramubakti',
           cutiQuota: 12,
           shift: '',
@@ -211,7 +211,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
           username: '',
           name: '',
           position: '',
-          password: '',
+          password: '123',
           role: 'pramubakti',
           cutiQuota: 12,
           shift: '',
@@ -239,7 +239,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
       username: '',
       name: '',
       position: '',
-      password: '',
+      password: '123',
       role: 'pramubakti',
       cutiQuota: 12,
       shift: '',
@@ -494,7 +494,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
                             username: emp.id || '',
                             name: emp.name || '',
                             position: emp.position || '',
-                            password: emp.password || 'password123',
+                            password: emp.password || '123',
                             role: normalizedRole,
                             cutiQuota: typeof emp.cutiQuota === 'number' ? emp.cutiQuota : 12,
                             shift: normalizedRole === 'security' ? 'Fleksibel' : '',
