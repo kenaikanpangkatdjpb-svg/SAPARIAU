@@ -117,7 +117,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
     setIsSaving(true);
     const safetyTimeout = setTimeout(() => {
       setIsSaving(false);
-    }, 2500);
+    }, 4500);
 
     try {
       if (editingEmployee) {
@@ -148,7 +148,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
 
         await Promise.race([
           onEditEmployee(updatedEmp, editingEmployee.id),
-          new Promise<void>((resolve) => setTimeout(resolve, 1500))
+          new Promise<void>((resolve) => setTimeout(resolve, 4000))
         ]);
 
         setJustUpdatedId(cleanUsername);
@@ -196,7 +196,7 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
 
         await Promise.race([
           onAddEmployee(newEmp),
-          new Promise<void>((resolve) => setTimeout(resolve, 1500))
+          new Promise<void>((resolve) => setTimeout(resolve, 4000))
         ]);
 
         setJustUpdatedId(cleanUsername);

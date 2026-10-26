@@ -20,7 +20,7 @@ import {
   arrayRemove
 } from 'firebase/firestore';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from '../types';
-import { isNonPpnpn, NON_PPNPN_IDS, isEmployeeDeleted, markEmployeeAsDeleted } from './storage';
+import { isNonPpnpn, NON_PPNPN_IDS, isEmployeeDeleted, markEmployeeAsDeleted, unmarkEmployeeAsDeleted } from './storage';
 import rawFirebaseConfig from '../../firebase-applet-config.json';
 
 // Resolves Firebase config: prioritizes VITE_FIREBASE_* environment variables (for Vercel/production),
@@ -584,6 +584,9 @@ export const upsertEmployeeToFirebase = async (employee: Employee, throwOnError 
     const payload = mapEmployeeToDb(cleanEmployee);
     delete readCacheTimestamps['employees'];
 
+    // Ensure employee is not marked as deleted locally
+    unmarkEmployeeAsDeleted(cleanId, cleanEmployee.name);
+
     // Update local cache immediately so subsequent gets always have this updated employee
     try {
       const localEmps = getLocalCache<Employee[]>('ppnpn_employees', []);
@@ -592,10 +595,16 @@ export const upsertEmployeeToFirebase = async (employee: Employee, throwOnError 
       setLocalCache('ppnpn_employees', updatedLocal);
     } catch {}
 
-    // Firestore setDoc with 2.5 second timeout race so UI never hangs
+    // Write employee document and remove from deleted_records in Firestore
     const docRef = doc(db, 'ppnpn_employees', cleanId);
-    const writePromise = setDoc(docRef, payload, { merge: true }).then(() => true);
-    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 2500));
+    const writePromise = Promise.all([
+      setDoc(docRef, payload, { merge: true }),
+      unmarkEmployeeAsDeletedInFirebase(cleanId, cleanEmployee.name).catch(() => false)
+    ]).then(() => {
+      setFirebaseQuotaExceeded(false);
+      return true;
+    });
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 5000));
     
     await Promise.race([writePromise, timeoutPromise]);
     delete readCacheTimestamps['employees'];

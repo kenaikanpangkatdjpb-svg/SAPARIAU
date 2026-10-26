@@ -100,6 +100,7 @@ export default function App() {
   const [logbooks, setLogbooks] = useState<Logbook[]>([]);
   const [settings, setSettings] = useState<OfficeSettings>({} as OfficeSettings);
   const rawRemoteEmployeesRef = useRef<Employee[] | null>(null);
+  const pendingEmployeesRef = useRef<Map<string, Employee>>(new Map());
 
   // Auth & View state
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
@@ -253,6 +254,11 @@ export default function App() {
             empMap.set(id, emp);
           }
         });
+        pendingEmployeesRef.current.forEach((pendingEmp, id) => {
+          if (!isEmployeeDeleted(pendingEmp.id, pendingEmp.name)) {
+            empMap.set(id, pendingEmp);
+          }
+        });
         const filtered = Array.from(empMap.values());
         safeSetLocalStorageItem('ppnpn_employees', filtered);
         return filtered;
@@ -287,6 +293,16 @@ export default function App() {
             const id = (emp.id || '').trim().toLowerCase();
             if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name)) {
               empMap.set(id, emp);
+            }
+          });
+
+          // Preserve any newly added or edited employees in this session so snapshots never overwrite them with stale cache
+          pendingEmployeesRef.current.forEach((pendingEmp, id) => {
+            if (!isEmployeeDeleted(pendingEmp.id, pendingEmp.name)) {
+              const existing = empMap.get(id);
+              if (!existing || (pendingEmp.updatedAt && (!existing.updatedAt || pendingEmp.updatedAt >= existing.updatedAt))) {
+                empMap.set(id, pendingEmp);
+              }
             }
           });
 
@@ -538,7 +554,6 @@ export default function App() {
     const nowIso = new Date().toISOString();
     // Unmark in case ID was previously in deleted list
     unmarkEmployeeAsDeleted(cleanId, newEmp.name);
-    unmarkEmployeeAsDeletedFromSupabase(cleanId, newEmp.name).catch(() => {});
 
     const normalizedEmp: Employee = {
       ...newEmp,
@@ -547,12 +562,14 @@ export default function App() {
       email: `${cleanId}@ppnpn.com`,
       role: newEmp.role,
       position: newEmp.position.trim(),
-      password: newEmp.password,
+      password: newEmp.password || '123',
       cutiQuota: typeof newEmp.cutiQuota === 'number' && !isNaN(newEmp.cutiQuota) ? newEmp.cutiQuota : 12,
       shift: newEmp.role === 'security' ? 'Fleksibel' : undefined,
       status: newEmp.status || 'aktif',
       updatedAt: nowIso
     };
+
+    pendingEmployeesRef.current.set(cleanId, normalizedEmp);
 
     setEmployees(prev => {
       const empMap = new Map<string, Employee>();
@@ -572,7 +589,7 @@ export default function App() {
 
     window.dispatchEvent(new Event('storage'));
 
-    // Persist to Firebase Firestore with fast non-blocking race so UI never hangs
+    // Persist to Firebase Firestore
     const dbPromise = upsertEmployeeToSupabase(normalizedEmp, false).catch(err => {
       console.warn("Gagal menyimpan pegawai baru ke Firebase:", err);
       return false;
@@ -580,7 +597,7 @@ export default function App() {
 
     await Promise.race([
       dbPromise,
-      new Promise<boolean>(resolve => setTimeout(() => resolve(true), 800))
+      new Promise<boolean>(resolve => setTimeout(() => resolve(true), 3500))
     ]);
 
     showToast(`Data pegawai "${normalizedEmp.name}" berhasil disimpan ke database!`, "success", "Tersimpan");
@@ -597,6 +614,9 @@ export default function App() {
       (name && e.name && e.name.trim().toLowerCase() === name.trim().toLowerCase())
     );
     const empName = name || targetEmp?.name || '';
+
+    pendingEmployeesRef.current.delete(cleanIdLower);
+    pendingEmployeesRef.current.delete(cleanId);
 
     // 1. Mark as permanently deleted in storage
     markEmployeeAsDeleted(cleanId, empName);
@@ -637,7 +657,6 @@ export default function App() {
 
     // Unmark cleanNewId in case it was in deleted list
     unmarkEmployeeAsDeleted(cleanNewId, updatedEmp.name);
-    unmarkEmployeeAsDeletedFromSupabase(cleanNewId, updatedEmp.name).catch(() => {});
 
     const normalizedEmp: Employee = {
       ...updatedEmp,
@@ -645,13 +664,18 @@ export default function App() {
       name: updatedEmp.name.trim(),
       email: `${cleanNewId}@ppnpn.com`,
       position: updatedEmp.position.trim(),
-      password: updatedEmp.password,
+      password: updatedEmp.password || '123',
       role: updatedEmp.role,
       cutiQuota: typeof updatedEmp.cutiQuota === 'number' && !isNaN(updatedEmp.cutiQuota) ? updatedEmp.cutiQuota : 12,
       shift: updatedEmp.role === 'security' ? 'Fleksibel' : undefined,
       status: updatedEmp.status || 'aktif',
       updatedAt: nowIso
     };
+
+    if (cleanOldId && cleanOldId !== cleanNewId) {
+      pendingEmployeesRef.current.delete(cleanOldId);
+    }
+    pendingEmployeesRef.current.set(cleanNewId, normalizedEmp);
 
     // 1. Update state and local storage immediately in-place
     setEmployees(prev => {
@@ -682,7 +706,7 @@ export default function App() {
 
     window.dispatchEvent(new Event('storage'));
 
-    // 2. Persist to Firebase Firestore with fast non-blocking race so UI responds immediately
+    // 2. Persist to Firebase Firestore
     const dbPromise = upsertEmployeeToSupabase(normalizedEmp, false).catch(err => {
       console.warn("Notice: background employee sync to Firestore:", err);
       return false;
@@ -690,7 +714,7 @@ export default function App() {
 
     await Promise.race([
       dbPromise,
-      new Promise<boolean>(resolve => setTimeout(() => resolve(true), 800))
+      new Promise<boolean>(resolve => setTimeout(() => resolve(true), 3500))
     ]);
 
     showToast(`Perubahan data pegawai "${normalizedEmp.name}" berhasil disimpan ke database.`, "success", "Database Diperbarui");

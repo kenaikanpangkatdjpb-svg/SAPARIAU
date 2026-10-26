@@ -66,22 +66,39 @@ export const NON_PPNPN_NAMES = [
 export const isNonPpnpn = (id?: string | null, name?: string | null): boolean => {
   const normId = (id || '').toLowerCase().trim();
   const normName = (name || '').toLowerCase().trim();
+  const unmarked = getUnmarkedEmployeeIds();
+  if (normId && unmarked.includes(normId)) return false;
+  if (normName && unmarked.includes(`name:${normName}`)) return false;
   if (normId && NON_PPNPN_IDS.includes(normId)) return true;
   if (normName && NON_PPNPN_NAMES.some(n => normName === n || normName.includes(n))) return true;
   return false;
 };
 
 export const DELETED_EMPLOYEES_KEY = 'ppnpn_deleted_employee_ids';
+export const UNMARKED_EMPLOYEES_KEY = 'ppnpn_unmarked_employee_ids';
 
 const PROTECTED_ADMIN_IDS = ['nauval', '123', 'name:nauval', 'name:nauval (admin)'];
+
+export const getUnmarkedEmployeeIds = (): string[] => {
+  try {
+    const stored = localStorage.getItem(UNMARKED_EMPLOYEES_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed.map(s => String(s || '').trim().toLowerCase()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+};
 
 export const getDeletedEmployeeIds = (): string[] => {
   try {
     const stored = localStorage.getItem(DELETED_EMPLOYEES_KEY);
-    const parsed: string[] = stored ? JSON.parse(stored) : [];
+    const parsed: string[] = stored ? JSON.parse(stored) : LEGACY_REMOVED_IDS;
+    const unmarked = new Set(getUnmarkedEmployeeIds());
     const set = new Set<string>(
-      [...LEGACY_REMOVED_IDS, ...parsed.map(s => (s || '').trim().toLowerCase()).filter(Boolean)]
-        .filter(item => !PROTECTED_ADMIN_IDS.includes(item))
+      parsed
+        .map(s => (s || '').trim().toLowerCase())
+        .filter(item => Boolean(item) && !PROTECTED_ADMIN_IDS.includes(item) && !unmarked.has(item))
     );
     return Array.from(set);
   } catch {
@@ -91,11 +108,14 @@ export const getDeletedEmployeeIds = (): string[] => {
 
 export const setDeletedEmployeeIds = (newDeletedIds: string[]) => {
   try {
-    const set = new Set<string>(LEGACY_REMOVED_IDS);
-    for (const raw of newDeletedIds) {
+    const unmarked = new Set(getUnmarkedEmployeeIds());
+    const set = new Set<string>();
+    for (const raw of [...LEGACY_REMOVED_IDS, ...newDeletedIds]) {
       if (!raw) continue;
       const clean = raw.trim().toLowerCase();
-      if (clean && !PROTECTED_ADMIN_IDS.includes(clean)) set.add(clean);
+      if (clean && !PROTECTED_ADMIN_IDS.includes(clean) && !unmarked.has(clean)) {
+        set.add(clean);
+      }
     }
     localStorage.setItem(DELETED_EMPLOYEES_KEY, JSON.stringify(Array.from(set)));
   } catch (err) {
@@ -105,12 +125,15 @@ export const setDeletedEmployeeIds = (newDeletedIds: string[]) => {
 
 export const mergeDeletedEmployeeIds = (newDeletedIds: string[]) => {
   try {
+    const unmarked = new Set(getUnmarkedEmployeeIds());
     const deleted = getDeletedEmployeeIds();
     const set = new Set(deleted);
     for (const raw of newDeletedIds) {
       if (!raw) continue;
       const clean = raw.trim().toLowerCase();
-      if (clean && !PROTECTED_ADMIN_IDS.includes(clean)) set.add(clean);
+      if (clean && !PROTECTED_ADMIN_IDS.includes(clean) && !unmarked.has(clean)) {
+        set.add(clean);
+      }
     }
     localStorage.setItem(DELETED_EMPLOYEES_KEY, JSON.stringify(Array.from(set)));
   } catch (err) {
@@ -120,9 +143,18 @@ export const mergeDeletedEmployeeIds = (newDeletedIds: string[]) => {
 
 export const markEmployeeAsDeleted = (id: string, name?: string) => {
   try {
-    const deleted = getDeletedEmployeeIds();
     const cleanId = (id || '').trim().toLowerCase();
     const cleanName = (name || '').trim().toLowerCase();
+
+    // Remove from unmarked list if previously registered/unmarked
+    const unmarked = getUnmarkedEmployeeIds().filter(item => {
+      if (cleanId && item === cleanId) return false;
+      if (cleanName && (item === `name:${cleanName}` || item === cleanName)) return false;
+      return true;
+    });
+    localStorage.setItem(UNMARKED_EMPLOYEES_KEY, JSON.stringify(unmarked));
+
+    const deleted = getDeletedEmployeeIds();
     const set = new Set(deleted);
     if (cleanId && !PROTECTED_ADMIN_IDS.includes(cleanId)) set.add(cleanId);
     if (cleanName && !PROTECTED_ADMIN_IDS.includes(`name:${cleanName}`)) set.add(`name:${cleanName}`);
@@ -134,11 +166,22 @@ export const markEmployeeAsDeleted = (id: string, name?: string) => {
 
 export const unmarkEmployeeAsDeleted = (id: string, name?: string) => {
   try {
-    const deleted = getDeletedEmployeeIds();
     const cleanId = (id || '').trim().toLowerCase();
     const cleanName = (name || '').trim().toLowerCase();
-    const filtered = deleted.filter(item => {
-      const itemLower = item.toLowerCase();
+
+    // Record in unmarked list so stale snapshots or legacy lists never hide this employee
+    const unmarkedSet = new Set(getUnmarkedEmployeeIds());
+    if (cleanId) unmarkedSet.add(cleanId);
+    if (cleanName) {
+      unmarkedSet.add(`name:${cleanName}`);
+      unmarkedSet.add(cleanName);
+    }
+    localStorage.setItem(UNMARKED_EMPLOYEES_KEY, JSON.stringify(Array.from(unmarkedSet)));
+
+    const stored = localStorage.getItem(DELETED_EMPLOYEES_KEY);
+    const currentList: string[] = stored ? JSON.parse(stored) : LEGACY_REMOVED_IDS;
+    const filtered = currentList.filter(item => {
+      const itemLower = (item || '').trim().toLowerCase();
       if (cleanId && itemLower === cleanId) return false;
       if (cleanName && (itemLower === `name:${cleanName}` || itemLower === cleanName)) return false;
       return true;
@@ -155,6 +198,10 @@ export const isEmployeeDeleted = (id?: string | null, name?: string | null): boo
   if (cleanId === 'nauval' || cleanId === '123' || cleanName === 'nauval' || cleanName === 'nauval (admin)') {
     return false;
   }
+  const unmarked = getUnmarkedEmployeeIds();
+  if (cleanId && unmarked.includes(cleanId)) return false;
+  if (cleanName && (unmarked.includes(`name:${cleanName}`) || unmarked.includes(cleanName))) return false;
+
   const deleted = getDeletedEmployeeIds();
   if (!deleted || deleted.length === 0) return false;
   // When an employee has a valid ID, match strictly by ID so re-added employees
