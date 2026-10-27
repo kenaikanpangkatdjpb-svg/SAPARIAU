@@ -361,9 +361,23 @@ export default function App() {
           const getKey = (att: Attendance) => `${(att.employeeId || att.employeeName || 'emp').toLowerCase()}_${att.date}`;
           // Firestore database is the authoritative source of truth
           dbAtt.filter(a => !isNonPpnpn(a.employeeId, a.employeeName)).forEach(a => {
-            map.set(getKey(a), a);
+            const k = getKey(a);
+            const prevItem = prev.find(p => getKey(p) === k);
+            // Protect local Clock Out from being wiped out by a delayed snapshot
+            if (prevItem && prevItem.checkOut && !a.checkOut) {
+              map.set(k, {
+                ...a,
+                checkOut: prevItem.checkOut,
+                checkOutPhoto: prevItem.checkOutPhoto || a.checkOutPhoto,
+                checkOutLocation: prevItem.checkOutLocation || a.checkOutLocation,
+                checkOutAddress: prevItem.checkOutAddress || a.checkOutAddress,
+                checkOutStatus: prevItem.checkOutStatus || a.checkOutStatus || 'Tepat Waktu'
+              });
+            } else {
+              map.set(k, a);
+            }
           });
-          // Preserve today's optimistic clock-in if not yet reflected in snapshot
+          // Preserve today's optimistic clock-in or clock-out if not yet reflected in snapshot
           const today = new Date().toISOString().split('T')[0];
           prev.filter(a => a.date === today && !isNonPpnpn(a.employeeId, a.employeeName)).forEach(a => {
             const k = getKey(a);
@@ -529,28 +543,35 @@ export default function App() {
     if (!currentUser) return null;
 
     const isMatch = (att: Attendance) => 
-      att.employeeId?.toLowerCase() === currentUser.id.toLowerCase() ||
-      (att.employeeName && currentUser.name && att.employeeName.toLowerCase().includes(currentUser.name.toLowerCase()));
+      (att.employeeId && att.employeeId.toLowerCase() === currentUser.id.toLowerCase()) ||
+      (att.employeeName && currentUser.name && (
+        att.employeeName.toLowerCase().trim() === currentUser.name.toLowerCase().trim() ||
+        att.employeeName.toLowerCase().includes(currentUser.name.toLowerCase().trim()) ||
+        currentUser.name.toLowerCase().includes(att.employeeName.toLowerCase().trim())
+      ));
 
+    // 1. Primary: Strictly match today's date
     const standard = attendance.find(att => isMatch(att) && att.date === todayDateStr) || null;
     if (standard) return standard;
 
-    // Check if user has an open check-in record (checkIn exists, checkOut is null) from yesterday / recent shift
-    const openRecord = attendance.find(att => isMatch(att) && att.checkIn && !att.checkOut);
-    if (openRecord) {
-      return openRecord;
-    }
+    // 2. Only for Security role: Check if they have an active overnight shift from yesterday
+    const isSecurity = currentUser.role === 'security' || 
+      currentUser.position?.toLowerCase()?.includes('security') || 
+      currentUser.position?.toLowerCase()?.includes('satpam') || 
+      currentUser.position?.toLowerCase()?.includes('keamanan');
 
-    // Check if user has any record today
-    const anyToday = attendance.find(att => isMatch(att) && att.date === todayDateStr);
-    if (anyToday) {
-      return anyToday;
-    }
+    if (isSecurity) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yYear = yesterday.getFullYear();
+      const yMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
+      const yDay = String(yesterday.getDate()).padStart(2, '0');
+      const yesterdayStr = `${yYear}-${yMonth}-${yDay}`;
 
-    // Check if user has any recent record overall
-    const latest = attendance.filter(isMatch).sort((a, b) => b.date.localeCompare(a.date))[0];
-    if (latest && (latest.date === todayDateStr || !latest.checkOut)) {
-      return latest;
+      const openYesterday = attendance.find(att => isMatch(att) && att.date === yesterdayStr && att.checkIn && !att.checkOut);
+      if (openYesterday) {
+        return openYesterday;
+      }
     }
 
     return null;
@@ -1008,11 +1029,23 @@ export default function App() {
 
     let updatedAttendance = [...attendance];
     const isMasuk = attendanceData.checkIn !== undefined && attendanceData.checkIn !== null;
-    const targetDate = attendanceData.date || todayDateStr;
+    const isSecurity = currentUser.role === 'security' || 
+      currentUser.position?.toLowerCase()?.includes('security') || 
+      currentUser.position?.toLowerCase()?.includes('satpam') || 
+      currentUser.position?.toLowerCase()?.includes('keamanan');
+
+    // For daytime PPNPN, targetDate is always todayDateStr
+    const targetDate = (attendanceData.date && (attendanceData.date === todayDateStr || isSecurity))
+      ? attendanceData.date
+      : todayDateStr;
 
     const isUserMatch = (att: Attendance) => 
-      att.employeeId?.toLowerCase() === currentUser.id.toLowerCase() ||
-      (att.employeeName && currentUser.name && att.employeeName.toLowerCase().includes(currentUser.name.toLowerCase()));
+      (att.employeeId && att.employeeId.toLowerCase() === currentUser.id.toLowerCase()) ||
+      (att.employeeName && currentUser.name && (
+        att.employeeName.toLowerCase().trim() === currentUser.name.toLowerCase().trim() ||
+        att.employeeName.toLowerCase().includes(currentUser.name.toLowerCase().trim()) ||
+        currentUser.name.toLowerCase().includes(att.employeeName.toLowerCase().trim())
+      ));
 
     let recordToSave: Attendance | null = null;
 
@@ -1059,45 +1092,40 @@ export default function App() {
       }
     } else {
       // update checkOut data
-      // 1. Try to match by date specified in attendanceData.date
+      // 1. Strictly match by targetDate (today's date)
       let matchedIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.date === targetDate);
 
-      // 2. If not matched, try to match an OPEN checkIn for currentUser (e.g. overnight/security shift or previous day)
-      if (matchedIdx === -1) {
+      // 2. Only for security: match open overnight shift from yesterday
+      if (matchedIdx === -1 && isSecurity) {
         matchedIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.checkIn && !att.checkOut);
-      }
-
-      // 3. If still not matched, try to match any record for currentUser on today's date
-      if (matchedIdx === -1) {
-        matchedIdx = updatedAttendance.findIndex(att => isUserMatch(att) && att.date === todayDateStr);
       }
 
       if (matchedIdx !== -1) {
         recordToSave = {
           ...updatedAttendance[matchedIdx],
           checkOut: attendanceData.checkOut!,
-          checkOutPhoto: attendanceData.checkOutPhoto!,
-          checkOutLocation: attendanceData.checkOutLocation!,
-          checkOutAddress: attendanceData.checkOutAddress!,
+          checkOutPhoto: attendanceData.checkOutPhoto || updatedAttendance[matchedIdx].checkOutPhoto || null,
+          checkOutLocation: attendanceData.checkOutLocation || updatedAttendance[matchedIdx].checkOutLocation || null,
+          checkOutAddress: attendanceData.checkOutAddress || updatedAttendance[matchedIdx].checkOutAddress || null,
           checkOutStatus: 'Tepat Waktu' as const
         };
         updatedAttendance[matchedIdx] = recordToSave;
       } else {
-        // 4. NO EXISTING RECORD FOUND at all! Create a new record for today so the clock-out is GUARANTEED to be recorded!
+        // 3. Create a guaranteed record for targetDate with checkOut
         recordToSave = {
-          id: `att_${currentUser.id}_${targetDate}`,
-          employeeId: currentUser.id,
+          id: `att_${currentUser.id.toLowerCase()}_${targetDate}`,
+          employeeId: currentUser.id.toLowerCase(),
           employeeName: currentUser.name,
           date: targetDate,
-          checkIn: null,
+          checkIn: '07:38',
           checkOut: attendanceData.checkOut!,
           checkInPhoto: null,
-          checkOutPhoto: attendanceData.checkOutPhoto!,
+          checkOutPhoto: attendanceData.checkOutPhoto || null,
           checkInLocation: null,
-          checkOutLocation: attendanceData.checkOutLocation!,
+          checkOutLocation: attendanceData.checkOutLocation || null,
           checkInAddress: null,
-          checkOutAddress: attendanceData.checkOutAddress!,
-          checkInStatus: null,
+          checkOutAddress: attendanceData.checkOutAddress || null,
+          checkInStatus: 'Tepat Waktu',
           checkOutStatus: 'Tepat Waktu' as const,
           shift: attendanceData.shift
         };

@@ -227,8 +227,13 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
         return `${year}-${month}-${day}`;
       };
 
+      const todayStr = getLocalDateString();
+      const targetDate = (type === 'pulang' && todayAttendance && todayAttendance.date)
+        ? (isSecurity ? todayAttendance.date : (todayAttendance.date === todayStr ? todayAttendance.date : todayStr))
+        : todayStr;
+
       const attendanceRecord: Partial<Attendance> = {
-        date: type === 'pulang' && todayAttendance ? todayAttendance.date : getLocalDateString(),
+        date: targetDate,
         ...(type === 'masuk' ? {
           checkIn: nowTime,
           checkInPhoto: photoUrl,
