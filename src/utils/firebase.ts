@@ -453,7 +453,7 @@ export const getAttendanceFromFirebase = async (force: boolean = false): Promise
     return getLocalCache<Attendance[]>('ppnpn_attendance', []);
   }
   try {
-    const q = query(collection(db, 'ppnpn_attendance'), limit(300));
+    const q = collection(db, 'ppnpn_attendance');
     const snap = await getDocs(q);
     markCacheFetched('attendance');
     if (snap.empty) return [];
@@ -850,7 +850,7 @@ export const subscribeToAttendanceFromFirebase = (
   onError?: (err: any) => void
 ) => {
   try {
-    const q = query(collection(db, 'ppnpn_attendance'), limit(300));
+    const q = collection(db, 'ppnpn_attendance');
     return onSnapshot(q, (snap) => {
       const isFromCache = snap.metadata.fromCache;
       if (!isFromCache) {

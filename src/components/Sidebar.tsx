@@ -39,6 +39,7 @@ interface SidebarProps {
   onReconnect?: () => void;
   isOpen: boolean;
   onCloseMobile: () => void;
+  isDrawerOnly?: boolean;
 }
 
 export default function Sidebar({ 
@@ -50,7 +51,8 @@ export default function Sidebar({
   isSyncing = false,
   onReconnect,
   isOpen,
-  onCloseMobile
+  onCloseMobile,
+  isDrawerOnly = false
 }: SidebarProps) {
   const isAdmin = user.role === 'admin';
 
@@ -122,8 +124,11 @@ export default function Sidebar({
     <aside 
       id="app-sidebar"
       className={`bg-[#0B1A30] text-white flex flex-col select-none h-screen overflow-y-auto shrink-0 border-r border-slate-800 transition-all duration-300 ease-in-out z-50
-        fixed inset-y-0 left-0 lg:static lg:translate-x-0
-        ${isOpen ? 'translate-x-0 w-64' : '-translate-x-full lg:-ml-64 w-64 lg:w-64 lg:border-r-0'}`}
+        fixed inset-y-0 left-0 ${isDrawerOnly ? '' : 'lg:static lg:translate-x-0'}
+        ${isOpen 
+          ? 'translate-x-0 w-72 sm:w-80 shadow-2xl' 
+          : '-translate-x-full ' + (isDrawerOnly ? 'w-72 sm:w-80' : 'lg:-ml-64 w-64 lg:w-64 lg:border-r-0')
+        }`}
     >
       {/* Profile Header Block at the TOP (as requested & per screenshot) */}
       <div className="p-5 border-b border-slate-800 bg-[#081324] flex items-center justify-between gap-3.5">
@@ -147,10 +152,10 @@ export default function Sidebar({
           </div>
         </div>
         
-        {/* Close Button on Mobile */}
+        {/* Close Button on Mobile / Drawer Mode */}
         <button
           onClick={onCloseMobile}
-          className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+          className={`${isDrawerOnly ? 'block' : 'lg:hidden'} p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all cursor-pointer`}
           title="Tutup Menu"
         >
           <X className="w-4.5 h-4.5" />

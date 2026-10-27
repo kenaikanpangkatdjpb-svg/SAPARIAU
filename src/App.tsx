@@ -52,6 +52,7 @@ import {
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import MobileBottomNav from './components/MobileBottomNav';
+import MobileHomeView from './components/MobileHomeView';
 import DashboardView from './components/DashboardView';
 import PegawaiView from './components/PegawaiView';
 import ApprovalCutiView from './components/ApprovalCutiView';
@@ -73,7 +74,7 @@ import BackupRestoreView from './components/BackupRestoreView';
 import ResetDataView from './components/ResetDataView';
 
 // Extra Evaluation Views to match the requested image perfectly
-import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle, Users, PlusSquare, X, ExternalLink, CheckCircle } from 'lucide-react';
+import { Award, Heart, ThumbsUp, TrendingUp, Sparkles, Smile, ShieldCheck, Clock, RefreshCw, AlertTriangle, Users, PlusSquare, X, ExternalLink, CheckCircle, Smartphone, Monitor } from 'lucide-react';
 
 const MONTHS_LIST = [
   { value: '01', label: 'Januari' },
@@ -105,12 +106,25 @@ export default function App() {
   // Auth & View state
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [activeView, setActiveView] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.innerWidth >= 1024;
+  const [viewMode, setViewMode] = useState<'mobile' | 'desktop'>(() => {
+    try {
+      const saved = localStorage.getItem('sapariau_view_layout_mode');
+      return saved === 'desktop' ? 'desktop' : 'mobile';
+    } catch {
+      return 'mobile';
     }
-    return true;
   });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const toggleViewMode = () => {
+    setViewMode(prev => {
+      const next = prev === 'mobile' ? 'desktop' : 'mobile';
+      try {
+        localStorage.setItem('sapariau_view_layout_mode', next);
+      } catch {}
+      return next;
+    });
+  };
   const [absenModalType, setAbsenModalType] = useState<'masuk' | 'pulang' | null>(null);
   const [selectedLemburMonthNum, setSelectedLemburMonthNum] = useState('06');
   const [selectedLemburYear, setSelectedLemburYear] = useState('2026');
@@ -166,27 +180,27 @@ export default function App() {
     try {
       // Sync non-subscribed modules: Leaves, Logbooks, Settings, Overtime
       // Note: Employees, Deleted Records, and Attendance are handled entirely by live onSnapshot listeners
-      const rawDbLeaves = await getLeavesFromSupabase();
+      const rawDbLeaves = await getLeavesFromSupabase(true);
       if (rawDbLeaves && rawDbLeaves.length > 0) {
         const dbLeaves = rawDbLeaves.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
         setLeaves(dbLeaves);
         safeSetLocalStorageItem('ppnpn_leaves', dbLeaves.filter(l => l.type !== 'Lembur'));
       }
 
-      const rawDbLogs = await getLogbooksFromSupabase();
+      const rawDbLogs = await getLogbooksFromSupabase(true);
       if (rawDbLogs && rawDbLogs.length > 0) {
         const dbLogs = rawDbLogs.filter(l => !isNonPpnpn(l.employeeId, l.employeeName));
         setLogbooks(dbLogs);
         safeSetLocalStorageItem('ppnpn_logbooks', dbLogs);
       }
 
-      const dbSettings = await getSettingsFromSupabase();
+      const dbSettings = await getSettingsFromSupabase(true);
       if (dbSettings) {
         setSettings(dbSettings);
         safeSetLocalStorageItem('ppnpn_settings', dbSettings);
       }
 
-      const dbOvertime = await getOvertimeFromSupabase();
+      const dbOvertime = await getOvertimeFromSupabase(true);
       if (dbOvertime && dbOvertime.length > 0) {
         safeSetLocalStorageItem('overtime_attendance_records', dbOvertime);
       }
@@ -337,11 +351,17 @@ export default function App() {
         setAttendance(prev => {
           const map = new Map<string, Attendance>();
           const getKey = (att: Attendance) => `${(att.employeeId || att.employeeName || 'emp').toLowerCase()}_${att.date}`;
-          prev.filter(a => !isNonPpnpn(a.employeeId, a.employeeName)).forEach(a => map.set(getKey(a), a));
+          // Firestore database is the authoritative source of truth
           dbAtt.filter(a => !isNonPpnpn(a.employeeId, a.employeeName)).forEach(a => {
+            map.set(getKey(a), a);
+          });
+          // Preserve today's optimistic clock-in if not yet reflected in snapshot
+          const today = new Date().toISOString().split('T')[0];
+          prev.filter(a => a.date === today && !isNonPpnpn(a.employeeId, a.employeeName)).forEach(a => {
             const k = getKey(a);
-            const ex = map.get(k);
-            map.set(k, ex ? { ...ex, ...a } : a);
+            if (!map.has(k)) {
+              map.set(k, a);
+            }
           });
           const merged = Array.from(map.values()).filter(a => !isNonPpnpn(a.employeeId, a.employeeName));
           safeSetLocalStorageItem('ppnpn_attendance', merged);
@@ -1277,6 +1297,38 @@ export default function App() {
   const renderMainContent = () => {
     switch (activeView) {
       case 'dashboard':
+      case 'home':
+        if (viewMode === 'desktop') {
+          return (
+            <DashboardView
+              user={currentUser!}
+              employees={employees}
+              attendance={attendance}
+              leaves={leaves}
+              logbooks={logbooks}
+              settings={settings}
+              onNavigateToView={handleViewChange}
+              onApproveLeave={handleApproveLeave}
+              onSubmitLogbook={handleSubmitLogbook}
+              onOpenAbsenModal={setAbsenModalType}
+              todayAttendance={todayAttendance}
+            />
+          );
+        }
+        return (
+          <MobileHomeView
+            user={currentUser!}
+            settings={settings}
+            todayAttendance={todayAttendance}
+            employees={employees}
+            onOpenAbsenModal={setAbsenModalType}
+            onNavigateToView={handleViewChange}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            onLogout={handleLogout}
+          />
+        );
+      case 'desktop-dashboard':
+      case 'analytics':
         return (
           <DashboardView
             user={currentUser!}
@@ -1285,7 +1337,7 @@ export default function App() {
             leaves={leaves}
             logbooks={logbooks}
             settings={settings}
-            onNavigateToView={setActiveView}
+            onNavigateToView={handleViewChange}
             onApproveLeave={handleApproveLeave}
             onSubmitLogbook={handleSubmitLogbook}
             onOpenAbsenModal={setAbsenModalType}
@@ -1660,12 +1712,50 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-800 overflow-hidden font-sans relative">
+    <div className={`min-h-screen font-sans antialiased text-slate-800 ${
+      viewMode === 'mobile' 
+        ? 'bg-slate-900 flex flex-col items-center justify-start overflow-x-hidden selection:bg-blue-100' 
+        : 'flex h-screen bg-slate-50 overflow-hidden'
+    }`}>
       
-      {/* Mobile Backdrop Overlay */}
+      {/* Floating View Switcher on PC/Desktop (discreet pill at top-right) */}
+      <div className="hidden lg:flex fixed top-3 right-4 z-[999] items-center gap-1.5 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 text-white p-1 rounded-full shadow-2xl text-xs">
+        <button
+          onClick={() => {
+            setViewMode('mobile');
+            try { localStorage.setItem('sapariau_view_layout_mode', 'mobile'); } catch {}
+          }}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+            viewMode === 'mobile' 
+              ? 'bg-blue-600 text-white shadow-sm' 
+              : 'text-slate-400 hover:text-white'
+          }`}
+          title="Tampilan persis Handphone (SAPA RIAU Mobile)"
+        >
+          <Smartphone className="w-3.5 h-3.5" />
+          <span>Tampilan HP</span>
+        </button>
+        <button
+          onClick={() => {
+            setViewMode('desktop');
+            try { localStorage.setItem('sapariau_view_layout_mode', 'desktop'); } catch {}
+          }}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer ${
+            viewMode === 'desktop' 
+              ? 'bg-blue-600 text-white shadow-sm' 
+              : 'text-slate-400 hover:text-white'
+          }`}
+          title="Tampilan Desktop Lebar"
+        >
+          <Monitor className="w-3.5 h-3.5" />
+          <span>Mode Lebar</span>
+        </button>
+      </div>
+
+      {/* Backdrop overlay for Sidebar Drawer */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/55 z-40 lg:hidden transition-opacity duration-300"
+          className="fixed inset-0 bg-black/60 z-50 backdrop-blur-xs transition-opacity duration-300 cursor-pointer"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -1674,17 +1764,25 @@ export default function App() {
       <Sidebar
         user={currentUser}
         activeView={activeView}
-        onViewChange={handleViewChange}
+        onViewChange={(v) => {
+          handleViewChange(v);
+          setSidebarOpen(false);
+        }}
         onLogout={handleLogout}
         supabaseConnected={supabaseConnected}
         isSyncing={isSyncingSupabase}
         onReconnect={handleManualReconnect}
         isOpen={sidebarOpen}
         onCloseMobile={() => setSidebarOpen(false)}
+        isDrawerOnly={viewMode === 'mobile'}
       />
 
-      {/* 2. MAIN APP CONTENT CONTAINER */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+      {/* 2. PHONE CONTAINER in mobile mode (or full container in desktop mode) */}
+      <div className={`flex flex-col bg-white min-h-screen relative ${
+        viewMode === 'mobile'
+          ? 'w-full max-w-md mx-auto shadow-2xl border-x border-slate-200/60 pb-20 overflow-x-hidden'
+          : 'flex-1 min-w-0 overflow-hidden bg-slate-50'
+      }`}>
         
         {/* TOP BAR / HEADER */}
         <Header
@@ -1693,34 +1791,30 @@ export default function App() {
           settings={settings}
           onOpenAbsenModal={setAbsenModalType}
           onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+          activeView={activeView}
+          onNavigateToView={handleViewChange}
+          isMobileMode={viewMode === 'mobile'}
+          onToggleMobileMode={toggleViewMode}
         />
 
         {/* Quota Exceeded Notification Banner */}
         {isQuotaExceeded && !dismissQuotaBanner && (
-          <div className="bg-amber-500/10 border-b border-amber-500/20 px-3 sm:px-5 py-2.5 flex items-center justify-between text-xs text-amber-900 gap-3 shrink-0">
+          <div className="bg-amber-500/10 border-b border-amber-500/20 px-3 sm:px-4 py-2 flex items-center justify-between text-xs text-amber-900 gap-2 shrink-0">
             <div className="flex items-center gap-2 min-w-0">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <div className="flex flex-wrap items-center gap-x-1.5 text-[11px] sm:text-xs">
-                <span className="font-bold text-amber-900">Mode Offline / Cache Aktif:</span>
+              <div className="text-[11px] leading-tight">
+                <span className="font-bold text-amber-900">Mode Offline / Cache: </span>
                 <span className="text-amber-800">
-                  Batas kuota harian Firebase Firestore Free Tier (50.000 read/hari) telah tercapai. Data disajikan dari cache lokal ({isDataFromCache ? 'Cache Lokal' : 'Tersimpan'}). Seluruh data tetap aman.
+                  Data disajikan dari cache lokal ({isDataFromCache ? 'Cache Lokal' : 'Tersimpan'}).
                 </span>
                 <button
                   onClick={handleManualReconnect}
                   disabled={isSyncingSupabase}
-                  className="inline-flex items-center gap-1 font-semibold text-amber-950 bg-amber-200 hover:bg-amber-300 px-2.5 py-0.5 rounded text-[11px] ml-1 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                  className="inline-flex items-center gap-1 font-semibold text-amber-950 bg-amber-200 hover:bg-amber-300 px-2 py-0.5 rounded text-[10px] ml-1 transition-colors cursor-pointer"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
-                  Coba Hubungkan Ulang
+                  <RefreshCw className={`w-2.5 h-2.5 ${isSyncingSupabase ? 'animate-spin' : ''}`} />
+                  Hubungkan Ulang
                 </button>
-                <a
-                  href="https://console.firebase.google.com/project/sapariau-e99eb/firestore/databases/ai-studio-aplikasiabsensip-8568cdb0-c19d-48d6-bd52-75ab38d147d5/data?openUpgradeDialog=true"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 font-bold text-amber-900 underline hover:text-amber-700 ml-1"
-                >
-                  Upgrade Billing <ExternalLink className="w-3 h-3" />
-                </a>
               </div>
             </div>
             <button
@@ -1734,20 +1828,26 @@ export default function App() {
         )}
 
         {/* COMPONENT ROUTER PANEL */}
-        <main className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-8 bg-slate-50">
-          <div className="max-w-7xl mx-auto">
+        <main className={`flex-1 ${
+          viewMode === 'mobile' 
+            ? 'p-0 bg-white overflow-y-auto' 
+            : 'overflow-y-auto p-3.5 sm:p-5 md:p-6 lg:p-8 pb-24 lg:pb-8 bg-slate-50'
+        }`}>
+          <div className={viewMode === 'mobile' ? 'w-full' : 'max-w-7xl mx-auto'}>
             {renderMainContent()}
           </div>
         </main>
       </div>
 
-      {/* 3. MOBILE BOTTOM NAVIGATION (Handphone / Touch viewports only) */}
+      {/* 3. MOBILE BOTTOM NAVIGATION */}
       <MobileBottomNav
         user={currentUser}
         activeView={activeView}
         onViewChange={handleViewChange}
         onOpenAbsenModal={setAbsenModalType}
         onOpenSidebar={() => setSidebarOpen(true)}
+        onLogout={handleLogout}
+        isForceMobile={viewMode === 'mobile'}
       />
 
       {/* 4. CAPTURE PRESENCE MODAL */}

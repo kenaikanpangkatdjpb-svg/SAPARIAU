@@ -74,8 +74,10 @@ export default function Header({
   return (
     <header 
       id="app-header"
-      className={`bg-white border-b border-slate-200 py-2.5 sm:py-3 px-3 sm:px-5 lg:px-8 flex items-center justify-between gap-2.5 sm:gap-4 shrink-0 shadow-xs ${
-        !isMobileMode && activeView === 'dashboard' ? 'hidden lg:flex' : 'flex'
+      className={`bg-white border-b border-slate-200 py-2.5 sm:py-3 px-3 sm:px-4 flex items-center justify-between gap-2.5 sm:gap-4 shrink-0 shadow-xs ${
+        isMobileMode
+          ? (activeView === 'dashboard' ? 'hidden' : 'flex')
+          : (activeView === 'dashboard' ? 'hidden lg:flex' : 'flex')
       }`}
     >
       {/* Left side: Back to Dashboard or Hamburger Toggle Button */}

@@ -251,6 +251,18 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
     status: "aktif"
   },
   {
+    id: "adit",
+    name: "ADITYA PRATAMA",
+    email: "adit@ppnpn.com",
+    role: "security",
+    password: "123",
+    position: "Security / Petugas Keamanan",
+    joinDate: "2026-10-26",
+    cutiQuota: 2,
+    shift: "Fleksibel",
+    status: "aktif"
+  },
+  {
     id: "agil",
     name: "AGIL TRI SAPUTRA",
     email: "agil@ppnpn.com",

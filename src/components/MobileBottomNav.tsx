@@ -139,8 +139,14 @@ export default function MobileBottomNav({
 
       {/* Profile Drawer / Action Sheet */}
       {showProfileDrawer && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end p-0 animate-in fade-in lg:hidden">
-          <div className="bg-white rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden max-w-md w-full mx-auto shadow-2xl p-5 space-y-4">
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end p-0 animate-in fade-in"
+          onClick={() => setShowProfileDrawer(false)}
+        >
+          <div 
+            className="bg-white rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden max-w-md w-full mx-auto shadow-2xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             
             {/* Grab handle */}
             <div className="w-10 h-1.5 bg-slate-200 rounded-full mx-auto -mt-1 mb-1" />
