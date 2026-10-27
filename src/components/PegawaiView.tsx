@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { UserPlus, Search, Key, Mail, UserCheck, Trash2, Edit2, X, AlertTriangle, Shield, Car, Briefcase, Clock } from 'lucide-react';
 import { Employee, Role } from '../types';
 import { isEmployeeDeleted, isNonPpnpn } from '../utils/storage';
@@ -27,8 +27,19 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [justUpdatedId, setJustUpdatedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'semua' | 'aktif' | 'pindah' | 'tidak aktif'>('semua');
-  const [roleFilter, setRoleFilter] = useState<'semua' | 'pramubakti' | 'sopir' | 'security' | 'admin'>('semua');
+  const [roleFilter, setRoleFilter] = useState<'semua' | 'pramubakti' | 'sopir' | 'security' | 'admin' | 'semua-akun'>('semua');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Exact count of active PPNPN employees (excluding admins and non-ppnpn)
+  const ppnpnList = useMemo(() => {
+    return employees.filter(emp => emp && !isEmployeeDeleted(emp.id, emp.name) && !isNonPpnpn(emp.id, emp.name) && emp.role !== 'admin');
+  }, [employees]);
+
+  const pramubaktiCount = useMemo(() => ppnpnList.filter(e => e.role === 'pramubakti' || e.role === 'karyawan').length, [ppnpnList]);
+  const sopirCount = useMemo(() => ppnpnList.filter(e => e.role === 'sopir').length, [ppnpnList]);
+  const securityCount = useMemo(() => ppnpnList.filter(e => e.role === 'security').length, [ppnpnList]);
+  const adminCount = useMemo(() => employees.filter(e => e && !isEmployeeDeleted(e.id, e.name) && !isNonPpnpn(e.id, e.name) && e.role === 'admin').length, [employees]);
+  const allAccountsCount = ppnpnList.length + adminCount;
   
   const [formData, setFormData] = useState({
     username: '',
@@ -59,11 +70,16 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
     const empStatus = emp.status || 'aktif';
     const matchesStatus = statusFilter === 'semua' || empStatus === statusFilter;
 
+    // By default 'semua' displays ONLY the 12 PPNPN employees (emp.role !== 'admin')
     const matchesRole = roleFilter === 'semua'
-      ? true
-      : roleFilter === 'pramubakti'
-        ? (emp.role === 'pramubakti' || emp.role === 'karyawan')
-        : emp.role === roleFilter;
+      ? emp.role !== 'admin'
+      : roleFilter === 'semua-akun'
+        ? true
+        : roleFilter === 'admin'
+          ? emp.role === 'admin'
+          : roleFilter === 'pramubakti'
+            ? (emp.role === 'pramubakti' || emp.role === 'karyawan')
+            : emp.role === roleFilter;
     
     return matchesSearch && matchesStatus && matchesRole;
   });
@@ -353,16 +369,17 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
         <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none pt-1 border-t border-slate-100">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 shrink-0">Filter Peran:</span>
           {[
-            { id: 'semua', label: 'Semua Peran' },
-            { id: 'pramubakti', label: 'Pramubakti' },
-            { id: 'sopir', label: 'Sopir / Pengemudi' },
-            { id: 'security', label: 'Security (Fleksibel)' },
-            { id: 'admin', label: 'Admin' }
+            { id: 'semua', label: `Semua PPNPN (${ppnpnList.length})` },
+            { id: 'pramubakti', label: `Pramubakti (${pramubaktiCount})` },
+            { id: 'sopir', label: `Sopir (${sopirCount})` },
+            { id: 'security', label: `Security (${securityCount})` },
+            { id: 'admin', label: `Admin / Pejabat (${adminCount})` },
+            { id: 'semua-akun', label: `Semua Akun (${allAccountsCount})` }
           ].map((item) => (
             <button
               key={item.id}
               onClick={() => setRoleFilter(item.id as any)}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all shrink-0 ${
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all shrink-0 cursor-pointer ${
                 roleFilter === item.id
                   ? 'bg-slate-800 text-white border-slate-800 shadow-sm'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -379,9 +396,11 @@ export default function PegawaiView({ currentUser, employees, onAddEmployee, onD
         <div className="lg:col-span-8 space-y-4">
           <div className="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-sm">
             <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
-              <h4 className="font-bold text-slate-700 text-sm">Daftar Pegawai PPNPN</h4>
+              <h4 className="font-bold text-slate-700 text-sm">
+                {roleFilter === 'admin' ? 'Daftar Akun Administrator' : roleFilter === 'semua-akun' ? 'Daftar Seluruh Akun' : 'Daftar Pegawai PPNPN'}
+              </h4>
               <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 text-[10px] font-bold">
-                {filteredEmployees.length} Pegawai
+                {filteredEmployees.length} {roleFilter === 'admin' ? 'Akun Admin' : roleFilter === 'semua-akun' ? 'Total Akun' : 'Pegawai PPNPN'}
               </span>
             </div>
 

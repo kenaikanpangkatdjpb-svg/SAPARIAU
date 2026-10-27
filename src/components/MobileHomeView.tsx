@@ -24,7 +24,25 @@ import {
   ChevronRight,
   Info,
   Sparkles,
-  Award
+  Award,
+  Users,
+  ClipboardCheck,
+  TrendingUp,
+  Grid3X3,
+  FileSpreadsheet,
+  UserSquare2,
+  BookOpen,
+  Heart,
+  ThumbsUp,
+  Key,
+  CalendarCheck,
+  Settings,
+  Camera,
+  Image,
+  HardDrive,
+  RefreshCw,
+  History,
+  Menu
 } from 'lucide-react';
 import { Employee, Attendance, OfficeSettings } from '../types';
 
@@ -123,17 +141,72 @@ export default function MobileHomeView({
     }
   ];
 
-  // Quick feature list for search
+  // State for menu category filter on HP
+  const isAdmin = user.role === 'admin';
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  // Complete menus matching wide mode (desktop sidebar) exactly
+  const allAdminMenus = [
+    // 1. Menu Utama
+    { id: 'pegawai', name: 'Data Pegawai', category: 'utama', categoryLabel: 'Menu Utama', desc: 'Kelola data & status personil PPNPN', icon: Users, color: 'bg-blue-50 text-blue-600 border-blue-200' },
+    { id: 'verifikasi-approval', name: 'Verifikasi & Approval', category: 'utama', categoryLabel: 'Menu Utama', desc: 'Verifikasi & approval permohonan cuti / lembur', icon: ClipboardCheck, color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+    { id: 'monitoring-approval', name: 'Monitoring Approval', category: 'utama', categoryLabel: 'Menu Utama', desc: 'Pantau seluruh hasil persetujuan', icon: TrendingUp, color: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
+    { id: 'rekap-matrix', name: 'Rekap Absensi', category: 'utama', categoryLabel: 'Menu Utama', desc: 'Laporan matrix kehadiran bulanan', icon: Grid3X3, color: 'bg-purple-50 text-purple-600 border-purple-200' },
+    { id: 'rekap-lembur', name: 'Rekap Lembur', category: 'utama', categoryLabel: 'Menu Utama', desc: 'Rekapitulasi jam lembur PPNPN', icon: Clock, color: 'bg-amber-50 text-amber-600 border-amber-200' },
+    { id: 'rekap-spkl', name: 'Rekapitulasi SPKL', category: 'utama', categoryLabel: 'Menu Utama', desc: 'Rekap Surat Perintah Kerja Lembur PPNPN', icon: FileSpreadsheet, color: 'bg-teal-50 text-teal-600 border-teal-200' },
+    { id: 'detail-absensi', name: 'Detail Absensi', category: 'utama', categoryLabel: 'Menu Utama', desc: 'Riwayat presensi individu lengkap', icon: UserSquare2, color: 'bg-sky-50 text-sky-600 border-sky-200' },
+    { id: 'generate-cuti', name: 'Setting Cuti', category: 'utama', categoryLabel: 'Menu Utama', desc: 'Setting sisa kuota hak cuti PPNPN', icon: CalendarCheck, color: 'bg-rose-50 text-rose-600 border-rose-200' },
+
+    // 2. Evaluasi & Kinerja
+    { id: 'rapor', name: 'Rapor Kinerja', category: 'kinerja', categoryLabel: 'Evaluasi & Kinerja', desc: 'Rapor capaian kinerja tahunan PPNPN', icon: Heart, color: 'bg-rose-50 text-rose-600 border-rose-200' },
+    { id: 'perilaku', name: 'Perilaku', category: 'kinerja', categoryLabel: 'Evaluasi & Kinerja', desc: 'Penilaian aspek perilaku kerja', icon: TrendingUp, color: 'bg-violet-50 text-violet-600 border-violet-200' },
+    { id: 'survei', name: 'Survei Kepuasan', category: 'kinerja', categoryLabel: 'Evaluasi & Kinerja', desc: 'Survei kepuasan layanan internal', icon: ThumbsUp, color: 'bg-blue-50 text-blue-600 border-blue-200' },
+    { id: 'rekomendasi', name: 'Rekomendasi KI', category: 'kinerja', categoryLabel: 'Evaluasi & Kinerja', desc: 'Kepatuhan internal & evaluasi', icon: Award, color: 'bg-amber-50 text-amber-600 border-amber-200' },
+
+    // 3. Pengaturan & Sistem
+    { id: 'settings', name: 'Jam Operasional', category: 'pengaturan', categoryLabel: 'Pengaturan & Sistem', desc: 'Atur jam kerja & radius GPS kantor', icon: Settings, color: 'bg-slate-100 text-slate-700 border-slate-300' },
+    { id: 'kop-logo', name: 'KOP & Logo', category: 'pengaturan', categoryLabel: 'Pengaturan & Sistem', desc: 'Kustomisasi KOP surat & logo instansi', icon: Image, color: 'bg-pink-50 text-pink-600 border-pink-200' },
+    { id: 'ganti-password', name: 'Ganti Password', category: 'pengaturan', categoryLabel: 'Pengaturan & Sistem', desc: 'Perbarui kata sandi akun', icon: Key, color: 'bg-orange-50 text-orange-600 border-orange-200' },
+    { id: 'backup-restore', name: 'Backup & Restore', category: 'pengaturan', categoryLabel: 'Pengaturan & Sistem', desc: 'Cadangkan & pulihkan database sistem', icon: HardDrive, color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+    { id: 'reset-aplikasi', name: 'Reset Data', category: 'pengaturan', categoryLabel: 'Pengaturan & Sistem', desc: 'Reset data transaksi aplikasi', icon: RefreshCw, color: 'bg-red-50 text-red-600 border-red-200' },
+  ];
+
+  const allEmployeeMenus = [
+    // 1. Presensi & Aktivitas
+    { id: 'absen-masuk', name: 'Absen Masuk', category: 'presensi', categoryLabel: 'Presensi & Tugas', desc: 'Presensi kehadiran masuk dengan swafoto & GPS', icon: Clock, color: 'bg-blue-50 text-blue-600 border-blue-200', action: () => onOpenAbsenModal('masuk') },
+    { id: 'absen-pulang', name: 'Absen Pulang', category: 'presensi', categoryLabel: 'Presensi & Tugas', desc: 'Presensi kepulangan kantor', icon: Clock, color: 'bg-indigo-50 text-indigo-600 border-indigo-200', action: () => onOpenAbsenModal('pulang') },
+    { id: 'detail-absensi', name: 'Riwayat Absensi', category: 'presensi', categoryLabel: 'Presensi & Tugas', desc: 'Lihat riwayat jam presensi Anda', icon: History, color: 'bg-teal-50 text-teal-600 border-teal-200' },
+    { id: 'logbook', name: 'Logbook Tugas', category: 'presensi', categoryLabel: 'Presensi & Tugas', desc: 'Catat tugas & pekerjaan harian', icon: BookOpen, color: 'bg-emerald-50 text-emerald-600 border-emerald-200' },
+    { id: 'approval-cuti', name: 'Pengajuan Cuti', category: 'presensi', categoryLabel: 'Presensi & Tugas', desc: 'Ajukan cuti tahunan, izin & sakit', icon: CalendarCheck, color: 'bg-rose-50 text-rose-600 border-rose-200' },
+    { id: 'pengajuan-lembur', name: 'Pengajuan Lembur', category: 'presensi', categoryLabel: 'Presensi & Tugas', desc: 'Pengajuan SPKL lembur tugas', icon: Clock, color: 'bg-amber-50 text-amber-600 border-amber-200' },
+    { id: 'absen-lembur-hp', name: 'Absen Lembur (HP)', category: 'presensi', categoryLabel: 'Presensi & Tugas', desc: 'Presensi lembur mandiri via ponsel', icon: Camera, color: 'bg-sky-50 text-sky-600 border-sky-200' },
+
+    // 2. Kinerja & Akun
+    { id: 'rapor', name: 'Rapor Kinerja', category: 'kinerja', categoryLabel: 'Kinerja & Akun', desc: 'Hasil evaluasi kinerja pegawai', icon: Award, color: 'bg-purple-50 text-purple-600 border-purple-200' },
+    { id: 'rekomendasi', name: 'Rekomendasi KI', category: 'kinerja', categoryLabel: 'Kinerja & Akun', desc: 'Kepatuhan internal & standar', icon: Shield, color: 'bg-pink-50 text-pink-600 border-pink-200' },
+    { id: 'ganti-password', name: 'Ganti Password', category: 'kinerja', categoryLabel: 'Kinerja & Akun', desc: 'Ubah kata sandi akun PPNPN', icon: Key, color: 'bg-orange-50 text-orange-600 border-orange-200' },
+  ];
+
+  const currentMenus = isAdmin ? allAdminMenus : allEmployeeMenus;
+  const displayedMenus = selectedCategory === 'all' 
+    ? currentMenus 
+    : currentMenus.filter(m => m.category === selectedCategory);
+
+  // Quick feature list for search indexing all menus
   const searchableFeatures = [
-    { name: 'Absensi Masuk / Pulang', desc: 'Presensi harian dengan kamera selfie & GPS', action: () => onOpenAbsenModal('masuk') },
-    { name: 'Manajemen Kehadiran', desc: 'Riwayat & detail rekap kehadiran', action: () => onNavigateToView('detail-absensi') },
-    { name: 'Data Pegawai (Talent)', desc: 'Daftar personil & profil PPNPN', action: () => onNavigateToView('pegawai') },
-    { name: 'Report Presensi', desc: 'Laporan matrix absensi bulanan', action: () => onNavigateToView('rekap-matrix') },
-    { name: 'Pengajuan Lembur', desc: 'Pencatatan & SPKL lembur PPNPN', action: () => onNavigateToView('pengajuan-lembur') },
-    { name: 'Cuti & Izin (Reimburse)', desc: 'Pengajuan cuti tahunan, izin & sakit', action: () => onNavigateToView('approval-cuti') },
-    { name: 'Logbook Harian (Kasbon)', desc: 'Catatan tugas harian PPNPN', action: () => onNavigateToView('logbook') },
-    { name: 'Rekomendasi KI / Pelatihan', desc: 'Evaluasi kepatuhan internal', action: () => onNavigateToView('rekomendasi') },
-    { name: 'Pengaturan Jam & Lokasi', desc: 'Radius GPS kantor & jam operasional', action: () => onNavigateToView('system-settings') },
+    { name: 'Absensi Masuk (Clock In)', desc: 'Presensi kehadiran swafoto & GPS', action: () => onOpenAbsenModal('masuk') },
+    { name: 'Absensi Pulang (Clock Out)', desc: 'Presensi kepulangan kantor', action: () => onOpenAbsenModal('pulang') },
+    ...currentMenus.map(m => ({
+      name: m.name,
+      desc: m.desc,
+      action: () => {
+        if ('action' in m && typeof (m as any).action === 'function') {
+          (m as any).action();
+        } else {
+          onNavigateToView(m.id);
+        }
+      }
+    }))
   ];
 
   const filteredFeatures = searchQuery.trim() === '' 
@@ -142,7 +215,7 @@ export default function MobileHomeView({
 
   const filteredEmployees = searchQuery.trim() === ''
     ? []
-    : employees.filter(e => e.name.toLowerCase().includes(searchQuery.toLowerCase()) || e.position.toLowerCase().includes(searchQuery.toLowerCase()));
+    : employees.filter(e => e.role !== 'admin' && (e.name.toLowerCase().includes(searchQuery.toLowerCase()) || e.position.toLowerCase().includes(searchQuery.toLowerCase())));
 
   return (
     <div className="w-full max-w-md mx-auto bg-white min-h-[92vh] pb-28 text-slate-800 select-none shadow-sm sm:border sm:border-slate-200/80 sm:rounded-3xl overflow-hidden font-sans">
@@ -286,140 +359,137 @@ export default function MobileHomeView({
         </div>
       </div>
 
-      {/* 4. 10 APP SHORTCUTS (5 COLUMNS x 2 ROWS) */}
+      {/* 4. MENU APLIKASI (Sama Persis dengan Mode Lebar / Desktop Sidebar) */}
       <div className="px-4 mt-6">
-        <div className="grid grid-cols-5 gap-y-4 gap-x-1.5">
-          
-          {/* 1. Absensi */}
-          <button
-            onClick={() => onOpenAbsenModal('masuk')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 group-hover:bg-amber-100/80 border border-amber-100 flex items-center justify-center text-amber-500 shadow-2xs transition-colors">
-              <Clock className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Absensi
-            </span>
-          </button>
+        <div className="flex items-center justify-between mb-2.5 px-1">
+          <div>
+            <h3 className="font-bold text-sm sm:text-base text-slate-900 tracking-tight flex items-center gap-1.5">
+              <span>Menu Aplikasi</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
+                {displayedMenus.length} Menu
+              </span>
+            </h3>
+            <p className="text-[11px] text-slate-500">Fitur lengkap sama persis dengan mode lebar</p>
+          </div>
+          {onOpenSidebar && (
+            <button
+              onClick={onOpenSidebar}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 active:scale-95 transition-transform cursor-pointer bg-blue-50/80 px-2.5 py-1.5 rounded-xl border border-blue-100"
+              title="Buka Menu Samping Lengkap"
+            >
+              <Menu className="w-3.5 h-3.5" />
+              <span>Sidebar</span>
+            </button>
+          )}
+        </div>
 
-          {/* 2. Manajemen Kehadiran */}
-          <button
-            onClick={() => onNavigateToView('detail-absensi')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 group-hover:bg-emerald-100/80 border border-emerald-100 flex items-center justify-center text-emerald-500 shadow-2xs transition-colors">
-              <PenLine className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[10px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Manajemen Kehadiran
-            </span>
-          </button>
+        {/* Category Filter Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none mb-3 px-1">
+          {isAdmin ? (
+            <>
+              <button
+                onClick={() => setSelectedCategory('all')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedCategory === 'all' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Semua ({allAdminMenus.length})
+              </button>
+              <button
+                onClick={() => setSelectedCategory('utama')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedCategory === 'utama' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Menu Utama (8)
+              </button>
+              <button
+                onClick={() => setSelectedCategory('kinerja')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedCategory === 'kinerja' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Evaluasi & Kinerja (4)
+              </button>
+              <button
+                onClick={() => setSelectedCategory('pengaturan')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedCategory === 'pengaturan' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Pengaturan (5)
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setSelectedCategory('all')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedCategory === 'all' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Semua Menu ({allEmployeeMenus.length})
+              </button>
+              <button
+                onClick={() => setSelectedCategory('presensi')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedCategory === 'presensi' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Presensi & Tugas (7)
+              </button>
+              <button
+                onClick={() => setSelectedCategory('kinerja')}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                  selectedCategory === 'kinerja' 
+                    ? 'bg-blue-600 text-white shadow-xs' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Kinerja & Akun (3)
+              </button>
+            </>
+          )}
+        </div>
 
-          {/* 3. Talent */}
-          <button
-            onClick={() => onNavigateToView('pegawai')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-pink-50 group-hover:bg-pink-100/80 border border-pink-100 flex items-center justify-center text-pink-500 shadow-2xs transition-colors">
-              <Briefcase className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Talent
-            </span>
-          </button>
-
-          {/* 4. Report */}
-          <button
-            onClick={() => onNavigateToView('rekap-matrix')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 group-hover:bg-blue-100/80 border border-blue-100 flex items-center justify-center text-blue-500 shadow-2xs transition-colors">
-              <FileText className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Report
-            </span>
-          </button>
-
-          {/* 5. Spaces */}
-          <button
-            onClick={() => onNavigateToView('system-settings')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 group-hover:bg-amber-100/80 border border-amber-100 flex items-center justify-center text-amber-500 shadow-2xs transition-colors">
-              <LayoutGrid className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Spaces
-            </span>
-          </button>
-
-          {/* 6. Lembur */}
-          <button
-            onClick={() => onNavigateToView('pengajuan-lembur')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 group-hover:bg-emerald-100/80 border border-emerald-100 flex items-center justify-center text-emerald-500 shadow-2xs transition-colors">
-              <UserCheck className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Lembur
-            </span>
-          </button>
-
-          {/* 7. Reimburse */}
-          <button
-            onClick={() => onNavigateToView('approval-cuti')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 group-hover:bg-rose-100/80 border border-rose-100 flex items-center justify-center text-rose-500 shadow-2xs transition-colors">
-              <HeartHandshake className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Reimburse
-            </span>
-          </button>
-
-          {/* 8. Fasilitas */}
-          <button
-            onClick={() => setShowFacilityModal(true)}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 group-hover:bg-blue-100/80 border border-blue-100 flex items-center justify-center text-blue-500 shadow-2xs transition-colors">
-              <Car className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Fasilitas
-            </span>
-          </button>
-
-          {/* 9. Pinjaman */}
-          <button
-            onClick={() => setShowFinancialModal('pinjaman')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 group-hover:bg-amber-100/80 border border-amber-100 flex items-center justify-center text-amber-500 shadow-2xs transition-colors">
-              <Coins className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Pinjaman
-            </span>
-          </button>
-
-          {/* 10. Kasbon */}
-          <button
-            onClick={() => setShowFinancialModal('kasbon')}
-            className="flex flex-col items-center group cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 group-hover:bg-emerald-100/80 border border-emerald-100 flex items-center justify-center text-emerald-500 shadow-2xs transition-colors">
-              <Receipt className="w-6 h-6 stroke-[2.2]" />
-            </div>
-            <span className="text-[11px] font-medium text-slate-700 mt-1.5 text-center leading-tight">
-              Kasbon
-            </span>
-          </button>
-
+        {/* Dynamic 4-Column Responsive Menu Grid */}
+        <div className="grid grid-cols-4 gap-y-4 gap-x-2">
+          {displayedMenus.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  if ('action' in item && typeof (item as any).action === 'function') {
+                    (item as any).action();
+                  } else {
+                    onNavigateToView(item.id);
+                  }
+                }}
+                className="flex flex-col items-center group cursor-pointer active:scale-95 transition-all text-center"
+                title={item.name}
+              >
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border shadow-2xs transition-all group-hover:scale-105 group-hover:shadow-md ${item.color}`}>
+                  <Icon className="w-5 h-5 stroke-[2.2]" />
+                </div>
+                <span className="text-[11px] font-semibold text-slate-700 group-hover:text-blue-600 mt-1.5 leading-tight line-clamp-2 px-0.5">
+                  {item.name}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

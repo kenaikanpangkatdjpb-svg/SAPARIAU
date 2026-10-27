@@ -37,10 +37,11 @@ export default function MobileBottomNav({
   const [showProfileDrawer, setShowProfileDrawer] = useState(false);
 
   // Determine active states matching the 5 tabs
+  const isAdmin = user.role === 'admin';
   const isBeranda = activeView === 'dashboard' || activeView === 'home';
-  const isAktivitas = activeView === 'detail-absensi' || activeView === 'approval-cuti' || activeView === 'rekap-matrix';
-  const isTugas = activeView === 'logbook' || activeView === 'pengajuan-lembur';
-  const isPelatihan = activeView === 'rekomendasi' || activeView === 'pelatihan' || activeView === 'survei';
+  const isAktivitas = activeView === 'detail-absensi' || activeView === 'approval-cuti' || activeView === 'rekap-matrix' || activeView === 'verifikasi-approval' || activeView === 'monitoring-approval';
+  const isTugas = activeView === 'logbook' || activeView === 'pengajuan-lembur' || activeView === 'rekap-spkl' || activeView === 'rekap-lembur' || activeView === 'pegawai';
+  const isPelatihan = activeView === 'rekomendasi' || activeView === 'rapor' || activeView === 'perilaku' || activeView === 'survei';
 
   return (
     <>
@@ -60,7 +61,7 @@ export default function MobileBottomNav({
               setShowProfileDrawer(false);
               onViewChange('dashboard');
             }}
-            className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-colors ${
+            className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-colors cursor-pointer ${
               isBeranda ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
@@ -72,42 +73,42 @@ export default function MobileBottomNav({
           <button
             onClick={() => {
               setShowProfileDrawer(false);
-              onViewChange('detail-absensi');
+              onViewChange(isAdmin ? 'verifikasi-approval' : 'detail-absensi');
             }}
-            className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-colors ${
+            className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-colors cursor-pointer ${
               isAktivitas ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
             <CalendarCheck className="w-5 h-5 shrink-0" strokeWidth={isAktivitas ? 2.5 : 2} />
-            <span className="text-[10px] mt-1 tracking-tight truncate">Aktivitas</span>
+            <span className="text-[10px] mt-1 tracking-tight truncate">{isAdmin ? 'Approval' : 'Aktivitas'}</span>
           </button>
 
           {/* 3. Tugas */}
           <button
             onClick={() => {
               setShowProfileDrawer(false);
-              onViewChange('logbook');
+              onViewChange(isAdmin ? 'rekap-matrix' : 'logbook');
             }}
-            className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-colors ${
+            className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-colors cursor-pointer ${
               isTugas ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
             <MessageSquareText className="w-5 h-5 shrink-0" strokeWidth={isTugas ? 2.5 : 2} />
-            <span className="text-[10px] mt-1 tracking-tight truncate">Tugas</span>
+            <span className="text-[10px] mt-1 tracking-tight truncate">{isAdmin ? 'Rekap' : 'Tugas'}</span>
           </button>
 
-          {/* 4. Pelatihan */}
+          {/* 4. Kinerja */}
           <button
             onClick={() => {
               setShowProfileDrawer(false);
-              onViewChange('rekomendasi');
+              onViewChange('rapor');
             }}
-            className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-colors ${
+            className={`flex flex-col items-center justify-center h-full min-h-[44px] transition-colors cursor-pointer ${
               isPelatihan ? 'text-blue-600 font-bold' : 'text-slate-400 hover:text-slate-700'
             }`}
           >
             <BookOpen className="w-5 h-5 shrink-0" strokeWidth={isPelatihan ? 2.5 : 2} />
-            <span className="text-[10px] mt-1 tracking-tight truncate">Pelatihan</span>
+            <span className="text-[10px] mt-1 tracking-tight truncate">Kinerja</span>
           </button>
 
           {/* 5. Profil (Avatar in circle as shown in screenshot) */}

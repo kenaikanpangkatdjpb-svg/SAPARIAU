@@ -8,7 +8,7 @@ interface AbsenModalProps {
   type: 'masuk' | 'pulang';
   settings: OfficeSettings;
   onClose: () => void;
-  onSubmit: (attendanceData: Partial<Attendance>) => void;
+  onSubmit: (attendanceData: Partial<Attendance>) => Promise<any> | void;
   todayAttendance?: Attendance | null;
 }
 
@@ -246,7 +246,7 @@ export default function AbsenModal({ user, type, settings, onClose, onSubmit, to
         })
       };
 
-      onSubmit(attendanceRecord);
+      await onSubmit(attendanceRecord);
       onClose();
     } catch (err) {
       console.error(err);

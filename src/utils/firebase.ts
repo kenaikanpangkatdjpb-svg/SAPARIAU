@@ -170,21 +170,21 @@ export const mapEmployeeFromDb = (row: any): Employee => {
 
 export const mapAttendanceToDb = (att: Attendance) => ({
   id: att.id,
-  employee_id: att.employeeId,
-  employee_name: att.employeeName,
-  date: att.date,
-  check_in: att.checkIn || null,
-  check_out: att.checkOut || null,
-  check_in_photo: att.checkInPhoto || null,
-  check_out_photo: att.checkOutPhoto || null,
-  check_in_location: att.checkInLocation ? JSON.stringify(att.checkInLocation) : null,
-  check_out_location: att.checkOutLocation ? JSON.stringify(att.checkOutLocation) : null,
-  check_in_address: att.checkInAddress || null,
-  check_out_address: att.checkOutAddress || null,
-  check_in_status: att.checkInStatus,
-  check_out_status: att.checkOutStatus || null,
-  logbook_notes: att.logbookNotes || null,
-  shift: att.shift || null
+  employee_id: att.employeeId || '',
+  employee_name: att.employeeName || '',
+  date: att.date || '',
+  check_in: att.checkIn ?? null,
+  check_out: att.checkOut ?? null,
+  check_in_photo: att.checkInPhoto ?? null,
+  check_out_photo: att.checkOutPhoto ?? null,
+  check_in_location: att.checkInLocation ? (typeof att.checkInLocation === 'string' ? att.checkInLocation : JSON.stringify(att.checkInLocation)) : null,
+  check_out_location: att.checkOutLocation ? (typeof att.checkOutLocation === 'string' ? att.checkOutLocation : JSON.stringify(att.checkOutLocation)) : null,
+  check_in_address: att.checkInAddress ?? null,
+  check_out_address: att.checkOutAddress ?? null,
+  check_in_status: att.checkInStatus ?? null,
+  check_out_status: att.checkOutStatus ?? null,
+  logbook_notes: att.logbookNotes ?? null,
+  shift: att.shift ?? null
 });
 
 export const mapAttendanceFromDb = (row: any): Attendance => {
@@ -628,9 +628,14 @@ export const upsertEmployeeToFirebase = async (employee: Employee, throwOnError 
 export const upsertAttendanceToFirebase = async (att: Attendance, throwOnError = false): Promise<boolean> => {
   try {
     const payload = mapAttendanceToDb(att);
-    const writePromise = setDoc(doc(db, 'ppnpn_attendance', att.id), payload, { merge: true }).then(() => true);
-    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 2500));
-    await Promise.race([writePromise, timeoutPromise]);
+    console.log(`[Firebase] Saving attendance ${att.id} to Firestore...`, {
+      employee: att.employeeName,
+      date: att.date,
+      checkIn: att.checkIn,
+      checkOut: att.checkOut
+    });
+    await setDoc(doc(db, 'ppnpn_attendance', att.id), payload, { merge: true });
+    console.log(`[Firebase] Attendance ${att.id} successfully saved to Firestore!`);
     return true;
   } catch (e: any) {
     if (isQuotaError(e)) {
@@ -639,7 +644,7 @@ export const upsertAttendanceToFirebase = async (att: Attendance, throwOnError =
       console.warn(`[Firebase] Kuota Firestore tercapai saat menyimpan absensi ${att.id}. Tersimpan di penyimpanan lokal.`);
       return true;
     }
-    console.warn(`Gagal memperbarui absensi ${att.id} ke Firebase:`, e?.message || e);
+    console.error(`[Firebase] Gagal memperbarui absensi ${att.id} ke Firebase:`, e?.message || e);
     if (throwOnError) {
       handleFirestoreError(e, OperationType.WRITE, `ppnpn_attendance/${att.id}`);
       throw new Error(e?.message || String(e));

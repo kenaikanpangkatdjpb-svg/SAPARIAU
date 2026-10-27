@@ -370,20 +370,20 @@ export default function ApprovalCutiView({
       : leaves.filter(l => l.employeeId === user.id);
   }, [leaves, isAdmin, user.id]);
 
-  // List of other employees for backups
+  // List of other employees for backups (all 12 PPNPN colleagues)
   const backupEmployees = useMemo(() => {
-    const list = employees.filter(e => e.role === 'karyawan' && e.id !== user.id).map(e => e.name);
+    const list = employees.filter(e => e.role !== 'admin' && e.id !== user.id).map(e => e.name);
     // Add default fallbacks to match the high-fidelity screenshots perfectly
     const fallbacks = [
-      "Bambang Oetoyo Putra",
-      "Robby Andayani",
-      "Aditya Pratama",
-      "Ahmad Nauval",
-      "Dian Ariawan"
+      "BAMBANG OETOYO PUTRA",
+      "ROBBY ANDAYANI",
+      "ADITYA PRATAMA",
+      "DIAN ARIAWAN",
+      "AGIL TRI SAPUTRA"
     ];
     // Merge list and fallbacks uniquely
     return Array.from(new Set([...list, ...fallbacks]));
-  }, [employees, user.id, user.name]);
+  }, [employees, user.id]);
 
   // Set default backups if they are empty
   useEffect(() => {

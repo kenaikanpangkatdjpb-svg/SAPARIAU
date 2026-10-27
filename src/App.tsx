@@ -14,7 +14,8 @@ import {
   unmarkEmployeeAsDeleted,
   mergeDeletedEmployeeIds,
   setDeletedEmployeeIds,
-  DEFAULT_EMPLOYEES
+  DEFAULT_EMPLOYEES,
+  ALL_OFFICIAL_IDS
 } from './utils/storage';
 import { Employee, Attendance, LeaveRequest, Logbook, OfficeSettings } from './types';
 import { 
@@ -163,9 +164,17 @@ export default function App() {
     setLogbooks(data.logbooks);
     setSettings(data.settings);
 
-    // Clean up legacy global quota key
+    // Clean up legacy global quota key and protect official employee IDs
     try {
       localStorage.removeItem('firebase_firestore_quota_exceeded_date');
+      const storedDel = localStorage.getItem('ppnpn_deleted_employee_ids');
+      if (storedDel) {
+        const parsed = JSON.parse(storedDel);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(id => !ALL_OFFICIAL_IDS.includes(String(id).trim().toLowerCase()));
+          localStorage.setItem('ppnpn_deleted_employee_ids', JSON.stringify(cleaned));
+        }
+      }
     } catch {}
 
     // If quota is already marked exceeded, avoid immediate outbound network reads
@@ -258,19 +267,24 @@ export default function App() {
           ? rawRemoteEmployeesRef.current
           : prev;
         const empMap = new Map<string, Employee>();
-        const defaultNauval = DEFAULT_EMPLOYEES.find(d => d.id === 'nauval');
-        if (defaultNauval) {
-          empMap.set('nauval', defaultNauval);
+        const isReset = typeof localStorage !== 'undefined' && localStorage.getItem('app_is_reset') === 'true';
+        if (!isReset) {
+          DEFAULT_EMPLOYEES.forEach(def => {
+            const id = (def.id || '').trim().toLowerCase();
+            if (id && !isNonPpnpn(def.id, def.name)) {
+              empMap.set(id, def);
+            }
+          });
         }
         sourceList.forEach(emp => {
           const id = (emp.id || '').trim().toLowerCase();
           if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name)) {
-            empMap.set(id, emp);
+            empMap.set(id, { ...(empMap.get(id) || {}), ...emp });
           }
         });
         pendingEmployeesRef.current.forEach((pendingEmp, id) => {
           if (!isEmployeeDeleted(pendingEmp.id, pendingEmp.name)) {
-            empMap.set(id, pendingEmp);
+            empMap.set(id, { ...(empMap.get(id) || {}), ...pendingEmp });
           }
         });
         const filtered = Array.from(empMap.values());
@@ -296,17 +310,22 @@ export default function App() {
         setEmployees(() => {
           const empMap = new Map<string, Employee>();
 
-          // Ensure default Admin Nauval (username: nauval) is always available alongside Firestore records
-          const defaultNauval = DEFAULT_EMPLOYEES.find(d => d.id === 'nauval');
-          if (defaultNauval) {
-            empMap.set('nauval', defaultNauval);
+          // Baseline: all 12 official PPNPN + 4 admin accounts are always guaranteed present
+          const isReset = typeof localStorage !== 'undefined' && localStorage.getItem('app_is_reset') === 'true';
+          if (!isReset) {
+            DEFAULT_EMPLOYEES.forEach(def => {
+              const id = (def.id || '').trim().toLowerCase();
+              if (id && !isNonPpnpn(def.id, def.name)) {
+                empMap.set(id, def);
+              }
+            });
           }
 
-          // Use Firestore records as the authoritative source of truth (matching sapariau.vercel.app)
+          // Authoritative Firestore database records merged cleanly on top
           cleanDbEmps.forEach(emp => {
             const id = (emp.id || '').trim().toLowerCase();
             if (id && !isNonPpnpn(emp.id, emp.name) && !isEmployeeDeleted(emp.id, emp.name)) {
-              empMap.set(id, emp);
+              empMap.set(id, { ...(empMap.get(id) || {}), ...emp });
             }
           });
 
@@ -315,21 +334,10 @@ export default function App() {
             if (!isEmployeeDeleted(pendingEmp.id, pendingEmp.name)) {
               const existing = empMap.get(id);
               if (!existing || (pendingEmp.updatedAt && (!existing.updatedAt || pendingEmp.updatedAt >= existing.updatedAt))) {
-                empMap.set(id, pendingEmp);
+                empMap.set(id, { ...(empMap.get(id) || {}), ...pendingEmp });
               }
             }
           });
-
-          // Default fallback only if completely empty on fresh install
-          const isReset = typeof localStorage !== 'undefined' && localStorage.getItem('app_is_reset') === 'true';
-          if (!isReset && empMap.size <= 1) {
-            DEFAULT_EMPLOYEES.forEach(def => {
-              const id = (def.id || '').trim().toLowerCase();
-              if (id && !isNonPpnpn(def.id, def.name) && !isEmployeeDeleted(def.id, def.name) && !empMap.has(id)) {
-                empMap.set(id, def);
-              }
-            });
-          }
 
           const merged = Array.from(empMap.values());
           safeSetLocalStorageItem('ppnpn_employees', merged);
@@ -1101,11 +1109,20 @@ export default function App() {
     saveAttendance(updatedAttendance);
 
     if (recordToSave) {
-      await upsertAttendanceToSupabase(recordToSave);
+      try {
+        const saved = await upsertAttendanceToSupabase(recordToSave, true);
+        if (saved) {
+          showToast(`Presensi ${isMasuk ? 'Clock In' : 'Clock Out'} berhasil disimpan otomatis ke database!`, "success", "Database Tersimpan");
+        } else {
+          showToast(`Presensi ${isMasuk ? 'Clock In' : 'Clock Out'} disimpan ke cache lokal.`, "info", "Penyimpanan");
+        }
+      } catch (err) {
+        console.error("Error saving attendance to database:", err);
+        showToast(`Presensi ${isMasuk ? 'Clock In' : 'Clock Out'} tersimpan secara lokal.`, "info", "Penyimpanan");
+      }
     }
 
     setAbsenModalType(null);
-    showToast(`Berhasil melakukan Absen ${isMasuk ? 'Masuk' : 'Pulang'}!`, "success", "Absensi Berhasil");
   };
 
   // Save Settings
@@ -1627,7 +1644,7 @@ export default function App() {
                           </tr>
                         ))
                       }
-                      {employees.filter(emp => emp.role === 'karyawan' && (searchQuotaQuery ? emp.name.toLowerCase().includes(searchQuotaQuery.toLowerCase()) : true)).length === 0 && (
+                      {employees.filter(emp => emp.role !== 'admin' && (searchQuotaQuery ? emp.name.toLowerCase().includes(searchQuotaQuery.toLowerCase()) : true)).length === 0 && (
                         <tr>
                           <td colSpan={4} className="p-5 text-center text-slate-400 font-semibold italic">Tidak ada pegawai PPNPN ditemukan</td>
                         </tr>

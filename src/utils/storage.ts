@@ -58,7 +58,23 @@ export const isNonPpnpn = (id?: string | null, name?: string | null): boolean =>
 export const DELETED_EMPLOYEES_KEY = 'ppnpn_deleted_employee_ids';
 export const UNMARKED_EMPLOYEES_KEY = 'ppnpn_unmarked_employee_ids';
 
-const PROTECTED_ADMIN_IDS = ['nauval', '123', 'name:nauval', 'name:nauval (admin)'];
+export const OFFICIAL_PPNPN_IDS = [
+  'adit',
+  'agil',
+  'ari',
+  'arief',
+  'atan',
+  'bambang',
+  'maika',
+  'maliq',
+  'nanda',
+  'robby',
+  'tia',
+  'zainal'
+];
+
+export const PROTECTED_ADMIN_IDS = ['nauval', '123', 'name:nauval', 'name:nauval (admin)', 'frans', 'kartika'];
+export const ALL_OFFICIAL_IDS = [...OFFICIAL_PPNPN_IDS, ...PROTECTED_ADMIN_IDS];
 
 export const getUnmarkedEmployeeIds = (): string[] => {
   try {
@@ -79,7 +95,7 @@ export const getDeletedEmployeeIds = (): string[] => {
     const set = new Set<string>(
       parsed
         .map(s => (s || '').trim().toLowerCase())
-        .filter(item => Boolean(item) && !PROTECTED_ADMIN_IDS.includes(item) && !unmarked.has(item))
+        .filter(item => Boolean(item) && !ALL_OFFICIAL_IDS.includes(item) && !unmarked.has(item))
     );
     return Array.from(set);
   } catch {
@@ -94,7 +110,7 @@ export const setDeletedEmployeeIds = (newDeletedIds: string[]) => {
     for (const raw of newDeletedIds) {
       if (!raw) continue;
       const clean = raw.trim().toLowerCase();
-      if (clean && !PROTECTED_ADMIN_IDS.includes(clean) && !unmarked.has(clean)) {
+      if (clean && !ALL_OFFICIAL_IDS.includes(clean) && !unmarked.has(clean)) {
         set.add(clean);
       }
     }
@@ -112,7 +128,7 @@ export const mergeDeletedEmployeeIds = (newDeletedIds: string[]) => {
     for (const raw of newDeletedIds) {
       if (!raw) continue;
       const clean = raw.trim().toLowerCase();
-      if (clean && !PROTECTED_ADMIN_IDS.includes(clean) && !unmarked.has(clean)) {
+      if (clean && !ALL_OFFICIAL_IDS.includes(clean) && !unmarked.has(clean)) {
         set.add(clean);
       }
     }
@@ -176,9 +192,15 @@ export const unmarkEmployeeAsDeleted = (id: string, name?: string) => {
 export const isEmployeeDeleted = (id?: string | null, name?: string | null): boolean => {
   const cleanId = (id || '').trim().toLowerCase();
   const cleanName = (name || '').trim().toLowerCase();
-  if (cleanId === 'nauval' || cleanId === '123' || cleanName === 'nauval' || cleanName === 'nauval (admin)') {
+
+  // All 12 official PPNPN and 4 admins are permanent official staff and never deleted by stale cache
+  if (cleanId && ALL_OFFICIAL_IDS.includes(cleanId)) {
     return false;
   }
+  if (cleanName && (cleanName.includes('nauval') || cleanName.includes('frans') || cleanName.includes('kartika'))) {
+    return false;
+  }
+
   const unmarked = getUnmarkedEmployeeIds();
   if (cleanId && unmarked.includes(cleanId)) return false;
   if (cleanName && (unmarked.includes(`name:${cleanName}`) || unmarked.includes(cleanName))) return false;
@@ -695,14 +717,12 @@ export const getStoredData = () => {
   const isResetLogbooks = isReset || localStorage.getItem('app_is_reset_logbook') === 'true';
 
   // Ensure stale dummy data from older default templates is replaced with production sapariau.vercel.app data
-  if (localStorage.getItem('ppnpn_vercel_sync_v6') !== 'true') {
+  if (localStorage.getItem('ppnpn_vercel_sync_v8') !== 'true') {
     localStorage.removeItem(KEYS.EMPLOYEES);
-    localStorage.removeItem(KEYS.LEAVES);
-    localStorage.removeItem(KEYS.SETTINGS);
     localStorage.removeItem(DELETED_EMPLOYEES_KEY);
     localStorage.removeItem('firebase_firestore_quota_exceeded_date');
     localStorage.removeItem('firebase_quota_exceeded_sapariau-e99eb');
-    localStorage.setItem('ppnpn_vercel_sync_v6', 'true');
+    localStorage.setItem('ppnpn_vercel_sync_v8', 'true');
   }
 
   // Check if data is already seeded with old NIP format, if so, reset
@@ -751,12 +771,24 @@ export const getStoredData = () => {
   // Dynamic filter out of non-PPNPN and deleted employees
   parsedEmployees = parsedEmployees.filter(e => !isNonPpnpn(e.id, e.name) && !isEmployeeDeleted(e.id, e.name) && e.id !== 'robert' && e.id !== 'lucas');
 
-  // Only if parsedEmployees is completely empty (first run), initialize with defaults
-  if (!isReset && parsedEmployees.length === 0) {
-    parsedEmployees = DEFAULT_EMPLOYEES.filter(d => 
-      !isNonPpnpn(d.id, d.name) && 
-      !isEmployeeDeleted(d.id, d.name)
-    );
+  // Ensure all 12 official PPNPN and 4 admins are ALWAYS included (even if local cache previously had only 1 employee)
+  if (!isReset) {
+    const map = new Map<string, Employee>();
+    DEFAULT_EMPLOYEES.forEach(def => {
+      const id = (def.id || '').trim().toLowerCase();
+      if (id && !isNonPpnpn(def.id, def.name)) {
+        map.set(id, def);
+      }
+    });
+    // Merge any existing parsed employee records
+    parsedEmployees.forEach(pe => {
+      const id = (pe.id || '').trim().toLowerCase();
+      if (id && !isNonPpnpn(pe.id, pe.name) && !isEmployeeDeleted(pe.id, pe.name)) {
+        map.set(id, { ...(map.get(id) || {}), ...pe });
+      }
+    });
+    parsedEmployees = Array.from(map.values());
+    safeSetLocalStorageItem(KEYS.EMPLOYEES, parsedEmployees);
   }
 
   // Assign specific roles and default status of 'aktif' to any employee without status
