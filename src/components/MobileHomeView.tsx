@@ -23,7 +23,6 @@ import {
   ExternalLink,
   ChevronRight,
   Info,
-  Sparkles,
   Award,
   Users,
   ClipboardCheck,
@@ -77,8 +76,6 @@ export default function MobileHomeView({
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showNotifModal, setShowNotifModal] = useState(false);
-  const [showPengumumanModal, setShowPengumumanModal] = useState(false);
-  const [activePengumumanIndex, setActivePengumumanIndex] = useState(0);
   const [showFacilityModal, setShowFacilityModal] = useState(false);
   const [showFinancialModal, setShowFinancialModal] = useState<'pinjaman' | 'kasbon' | null>(null);
 
@@ -113,33 +110,6 @@ export default function MobileHomeView({
   const checkInDisplay = todayAttendance?.checkIn ? `${todayAttendance.checkIn}:00` : '--:--:--';
   const checkOutDisplay = todayAttendance?.checkOut ? `${todayAttendance.checkOut}:00` : '--:--:--';
 
-  // Announcements list
-  const ANNOUNCEMENTS = [
-    {
-      id: 1,
-      title: 'Semarak Lomba Panjat Pinang HUT Kemerdekaan RI & Hari Bakti Perbendaharaan',
-      date: 'Sabtu, 24 Oktober 2026',
-      category: 'Kegiatan Satker',
-      description: 'Seluruh pegawai dan tenaga PPNPN diundang untuk memeriahkan perlombaan tradisional Panjat Pinang dan kebersamaan di lapangan utama kantor. Disediakan aneka doorprize dan apresiasi kebersamaan!',
-      image: '/assets/aistudio/image_0eb03409.png'
-    },
-    {
-      id: 2,
-      title: 'Ketentuan Jam Pelayanan & Presensi Fleksibel Tenaga Keamanan PPNPN',
-      date: 'Jumat, 23 Oktober 2026',
-      category: 'Tata Tertib',
-      description: 'Tenaga Keamanan (Security) tetap menjalankan sistem presensi Fleksibel 24 Jam dengan pencatatan geotagging lokasi presensi kantor Pekanbaru.',
-      image: ''
-    },
-    {
-      id: 3,
-      title: 'Sosialisasi Standar Kinerja & Pengisian Logbook Harian PPNPN',
-      date: 'Kamis, 22 Oktober 2026',
-      category: 'Info Kinerja',
-      description: 'Diharapkan seluruh personil PPNPN rutin mencatatkan logbook aktivitas harian pada menu Tugas guna pemutakhiran rapor kinerja akhir tahun.',
-      image: ''
-    }
-  ];
 
   // State for menu category filter on HP
   const isAdmin = user.role === 'admin';
@@ -493,64 +463,6 @@ export default function MobileHomeView({
         </div>
       </div>
 
-      {/* 5. PENGUMUMAN SECTION */}
-      <div className="px-5 mt-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-base text-slate-900 tracking-tight">
-            Pengumuman
-          </h3>
-          <button
-            onClick={() => setShowPengumumanModal(true)}
-            className="text-pink-600 hover:text-pink-700 font-semibold text-xs active:scale-95 transition-transform cursor-pointer"
-          >
-            Lihat Semua
-          </button>
-        </div>
-
-        {/* Big Announcement Card with Panjat Pinang celebration */}
-        <div 
-          onClick={() => { setActivePengumumanIndex(0); setShowPengumumanModal(true); }}
-          className="rounded-2xl overflow-hidden border border-slate-100 shadow-sm cursor-pointer group active:scale-[0.99] transition-all bg-white"
-        >
-          {/* Photo Container */}
-          <div className="relative h-44 w-full bg-slate-900 overflow-hidden">
-            {/* Real Screenshot Attachment as Announcement Banner */}
-            <img 
-              src="/assets/aistudio/image_0eb03409.png" 
-              alt="Perlombaan Tradisional Panjat Pinang" 
-              className="w-full h-full object-cover object-bottom scale-105 group-hover:scale-110 transition-transform duration-500 filter brightness-105"
-              referrerPolicy="no-referrer"
-            />
-            {/* Scrim Overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/20" />
-            
-            {/* Badge on Photo */}
-            <div className="absolute top-3 left-3">
-              <span className="px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-md text-pink-600 font-bold text-[10px] tracking-wide shadow-sm flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-pink-500" />
-                HUT Kemerdekaan RI
-              </span>
-            </div>
-
-            {/* Bottom Caption on Photo */}
-            <div className="absolute bottom-3 left-3 right-3 text-white">
-              <p className="text-[10px] font-medium text-slate-200">Sabtu, 24 Oktober 2026</p>
-              <h4 className="font-bold text-xs sm:text-sm text-white line-clamp-1 leading-snug drop-shadow-sm">
-                Semarak Lomba Panjat Pinang & Kebersamaan PPNPN
-              </h4>
-            </div>
-          </div>
-          
-          <div className="p-3.5 bg-white flex items-center justify-between">
-            <p className="text-xs text-slate-600 line-clamp-1 font-normal">
-              Perlombaan tradisional di lapangan kantor & pembagian apresiasi.
-            </p>
-            <span className="text-pink-600 text-xs font-bold shrink-0 ml-2 flex items-center">
-              Detail <ChevronRight className="w-3.5 h-3.5" />
-            </span>
-          </div>
-        </div>
-      </div>
 
       {/* MODAL 1: SEARCH MODAL */}
       {showSearchModal && (
@@ -683,56 +595,6 @@ export default function MobileHomeView({
         </div>
       )}
 
-      {/* MODAL 3: PENGUMUMAN MODAL */}
-      {showPengumumanModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-in fade-in">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl max-h-[85vh] flex flex-col overflow-hidden max-w-md w-full mx-auto shadow-2xl">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-800">Papan Pengumuman Kantor</h3>
-              <button 
-                onClick={() => setShowPengumumanModal(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-4 overflow-y-auto space-y-4">
-              {ANNOUNCEMENTS.map((item, idx) => (
-                <div 
-                  key={item.id}
-                  className={`p-4 rounded-2xl border transition-all ${
-                    idx === activePengumumanIndex 
-                      ? 'border-pink-300 bg-pink-50/20 shadow-xs' 
-                      : 'border-slate-100 bg-white hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-[10px] text-pink-600 font-bold mb-1">
-                    <span>{item.category}</span>
-                    <span className="text-slate-400 font-normal">{item.date}</span>
-                  </div>
-                  <h4 className="font-bold text-sm text-slate-900 mb-2 leading-snug">
-                    {item.title}
-                  </h4>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    {item.description}
-                  </p>
-                  {item.image && (
-                    <div className="mt-3 rounded-xl overflow-hidden h-36 border border-slate-200">
-                      <img 
-                        src={item.image} 
-                        alt={item.title} 
-                        className="w-full h-full object-cover object-bottom"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MODAL 4: FASILITAS KANTOR */}
       {showFacilityModal && (
