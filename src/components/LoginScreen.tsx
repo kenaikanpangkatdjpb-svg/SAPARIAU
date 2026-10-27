@@ -23,22 +23,37 @@ export default function LoginScreen({ onLoginSuccess, employees }: LoginScreenPr
     setErrorMessage('');
     if (!loginForm.id || !loginForm.password) return;
 
-    // Search by ID/Username, Email, or Full Name (excluding any deleted employee)
+    // Search employee with strict priority hierarchy to avoid collision between
+    // users with similar names (e.g. ID "nanda" -> "NANDA FEBRIADI ZAS" vs ID "maika" -> "NANDA MAIKA PUTRA")
     const query = loginForm.id.trim().toLowerCase();
     const pass = loginForm.password.trim();
-    let foundUser = employees.find(
-      emp => !isEmployeeDeleted(emp.id, emp.name) && (
-        emp.id.toLowerCase() === query || 
-        emp.email.toLowerCase() === query ||
-        emp.name.toLowerCase() === query ||
-        emp.name.toLowerCase().includes(query) ||
+
+    const activeEmployees = employees.filter(emp => !isEmployeeDeleted(emp.id, emp.name));
+
+    // Priority 1: Exact ID / Username match
+    let candidate = activeEmployees.find(emp => emp.id.trim().toLowerCase() === query);
+
+    // Priority 2: Exact Email match
+    if (!candidate) {
+      candidate = activeEmployees.find(emp => emp.email.trim().toLowerCase() === query);
+    }
+
+    // Priority 3: Exact Full Name match
+    if (!candidate) {
+      candidate = activeEmployees.find(emp => emp.name.trim().toLowerCase() === query);
+    }
+
+    // Priority 4: Fallback partial name match (e.g., if typing full distinct parts)
+    if (!candidate) {
+      candidate = activeEmployees.find(emp => 
+        emp.name.toLowerCase().includes(query) || 
         (emp.name && query.includes(emp.name.toLowerCase()))
-      ) && (emp.password === pass || pass === '123')
-    );
+      );
+    }
 
     // Fallback for Admin Nauval if user enters "nauval", "admin nauval", "nauval (admin)", or "123" with password "123"
-    if (!foundUser && pass === '123' && (query === 'nauval' || query === '123' || query.includes('nauval'))) {
-      foundUser = employees.find(e => e.id === '123' || e.id === 'nauval' || e.name.toLowerCase().includes('nauval')) || {
+    if (!candidate && pass === '123' && (query === 'nauval' || query === '123' || query.includes('nauval'))) {
+      candidate = activeEmployees.find(e => e.id === '123' || e.id === 'nauval' || e.name.toLowerCase().includes('nauval')) || {
         id: 'nauval',
         name: 'Nauval (Admin)',
         email: 'nauval@ppnpn.com',
@@ -51,8 +66,9 @@ export default function LoginScreen({ onLoginSuccess, employees }: LoginScreenPr
       };
     }
 
-    if (foundUser) {
-      onLoginSuccess(foundUser);
+    // Validate password for candidate
+    if (candidate && (candidate.password === pass || pass === '123')) {
+      onLoginSuccess(candidate);
     } else {
       setErrorMessage("Username atau Kata Sandi Anda salah!");
     }

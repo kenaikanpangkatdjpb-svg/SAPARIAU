@@ -366,7 +366,7 @@ export const DEFAULT_EMPLOYEES: Employee[] = [
   },
   {
     id: "nanda",
-    name: "NANDA FEBRIADI",
+    name: "NANDA FEBRIADI ZAS",
     email: "nanda@ppnpn.com",
     role: "pramubakti",
     password: "123",
@@ -530,7 +530,7 @@ const DEFAULT_LEAVES: LeaveRequest[] = [
     workDays: 1,
     address: "pekanbaru",
     backup1: "AGIL TRI SAPUTRA",
-    backup2: "NANDA FEBRIADI"
+    backup2: "NANDA FEBRIADI ZAS"
   },
   {
     id: "leave_1785140867417",
