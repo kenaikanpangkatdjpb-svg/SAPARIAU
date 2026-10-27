@@ -382,9 +382,9 @@ const DEFAULT_SETTINGS: OfficeSettings = {
   checkInStart: "07:30",
   checkInEnd: "08:15",
   checkOutStart: "17:00",
-  officeLat: 0.4735, // Pekanbaru coordinates
-  officeLng: 101.4478,
-  officeRadiusMeters: 500,
+  officeLat: 0.51504, // Kanwil DJPb Provinsi Riau (Jl. Jend. Sudirman No. 249, Pekanbaru)
+  officeLng: 101.44792,
+  officeRadiusMeters: 1000,
   officeName: "Kantor Wilayah DJPb Provinsi Riau (Pekanbaru)",
   sheetId: "",
   scriptUrl: "",
@@ -431,9 +431,9 @@ const generateSimulatedAttendance = (year: number, month: number, maxDay: number
         checkInPhoto: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
         checkOutPhoto: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
         checkInLocation: isOutRadius 
-          ? { lat: 0.5100, lng: 101.4100 } // Out of radius
-          : { lat: 0.4735 + (Math.random() - 0.5) * 0.001, lng: 101.4478 + (Math.random() - 0.5) * 0.001 },
-        checkOutLocation: { lat: 0.4735, lng: 101.4478 },
+          ? { lat: 0.5800, lng: 101.4100 } // Out of radius
+          : { lat: 0.51504 + (Math.random() - 0.5) * 0.001, lng: 101.44792 + (Math.random() - 0.5) * 0.001 },
+        checkOutLocation: { lat: 0.51504, lng: 101.44792 },
         checkInAddress: isOutRadius ? "Luar Kantor (Rumbai)" : "Kantor Pekanbaru",
         checkOutAddress: "Kantor Pekanbaru",
         checkInStatus: isLate ? 'Terlambat' : 'Tepat Waktu',
@@ -837,6 +837,13 @@ export const getStoredData = () => {
   let parsedSettings: OfficeSettings = DEFAULT_SETTINGS;
   try {
     parsedSettings = JSON.parse(settings) as OfficeSettings;
+    // Auto-migrate legacy/incorrect coordinates if still near 0.4735 or if radius is missing/small
+    if (parsedSettings && (Math.abs((parsedSettings.officeLat || 0) - 0.4735) < 0.005 || !parsedSettings.officeLat)) {
+      parsedSettings.officeLat = 0.51504;
+      parsedSettings.officeLng = 101.44792;
+      parsedSettings.officeRadiusMeters = Math.max(parsedSettings.officeRadiusMeters || 0, 1000);
+      safeSetLocalStorageItem(KEYS.SETTINGS, parsedSettings);
+    }
   } catch (e) {
     parsedSettings = DEFAULT_SETTINGS;
   }

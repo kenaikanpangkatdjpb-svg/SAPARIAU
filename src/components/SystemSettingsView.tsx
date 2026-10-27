@@ -5,10 +5,10 @@ import { GOOGLE_APPS_SCRIPT_CODE } from '../utils/storage';
 import { SQL_CREATION_SCRIPT, getLastSupabaseError, isSupabaseQuotaExceeded, activeFirebaseConfig } from '../utils/supabase';
 
 const OFFICE_PRESETS = [
-  { name: "Kantor Wilayah DJPb Provinsi Riau (Pekanbaru)", lat: 0.4735, lng: 101.4478, radius: 500 },
-  { name: "KPPN Pekanbaru", lat: 0.4852, lng: 101.4512, radius: 400 },
-  { name: "KPPN Dumai", lat: 1.6712, lng: 101.4447, radius: 400 },
-  { name: "KPPN Rengat", lat: -0.3758, lng: 102.5489, radius: 400 }
+  { name: "Kantor Wilayah DJPb Provinsi Riau (Pekanbaru)", lat: 0.51504, lng: 101.44792, radius: 1000 },
+  { name: "KPPN Pekanbaru", lat: 0.4852, lng: 101.4512, radius: 1000 },
+  { name: "KPPN Dumai", lat: 1.6712, lng: 101.4447, radius: 1000 },
+  { name: "KPPN Rengat", lat: -0.3758, lng: 102.5489, radius: 1000 }
 ];
 
 interface SystemSettingsViewProps {
